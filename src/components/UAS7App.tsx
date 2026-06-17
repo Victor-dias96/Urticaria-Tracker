@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import Header from './Header'
-import UAS7Form from './UAS7Form'
-import ActionButtons from './ActionButtons'
-import InterpretationCard from './InterpretationCard'
-import PhotoCapture from './PhotoCapture'
+import Header from '@/components/Header'
+import UAS7Form from '@/components/UAS7Form'
+import ActionButtons from '@/components/ActionButtons'
+import InterpretationCard from '@/components/InterpretationCard'
+import PhotoCapture from '@/components/PhotoCapture'
 
 export type DayScore = { urticaria: number; itch: number }
 

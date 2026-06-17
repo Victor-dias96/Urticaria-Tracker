@@ -35,7 +35,7 @@ export default function UAS7Form({
             Preencha diariamente. Entregue ao seu médico ao final de 7 dias consecutivos.
           </p>
         </div>
-        
+
         {/* Progress Badge */}
         <div className="self-start sm:self-center flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-wine-50 dark:bg-wine-950 border border-wine-100 dark:border-wine-800/80 text-wine-700 dark:text-wine-300 text-xs font-semibold shrink-0">
           <svg className="w-4 h-4 animate-pulse-soft" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -70,10 +70,10 @@ export default function UAS7Form({
                   <span className="text-wine-700 dark:text-wine-400 block sm:inline">COCEIRA</span>
                   <span className="text-[9px] text-gray-400 block font-normal normal-case">Nenhuma • Leve • Moderada • Grave</span>
                 </th>
-                <th scope="col" className="text-right pb-2 pr-3">Dia</th>
+                <th scope="col" className="text-right pb-2 pr-3">PONTOS</th>
               </tr>
             </thead>
-            
+
             <tbody>
               {weekDays.map((day, idx) => {
                 const score = scores[idx]
@@ -105,8 +105,8 @@ export default function UAS7Form({
                               onClick={() => onSetScore(idx, 'urticaria', opt.val)}
                               className={`
                                 flex items-center justify-center transition-all duration-200
-                                ${isSelected 
-                                  ? 'bg-wine-800 dark:bg-wine-700 text-white font-bold ring-2 ring-wine-300 dark:ring-wine-900 scale-105' 
+                                ${isSelected
+                                  ? 'bg-wine-800 dark:bg-wine-700 text-white font-bold ring-2 ring-wine-300 dark:ring-wine-900 scale-105'
                                   : 'bg-white dark:bg-gray-800 text-gray-650 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
                                 }
                                 /* Mobile-first circle style */
@@ -134,8 +134,8 @@ export default function UAS7Form({
                               onClick={() => onSetScore(idx, 'itch', opt.val)}
                               className={`
                                 flex items-center justify-center transition-all duration-200
-                                ${isSelected 
-                                  ? 'bg-wine-800 dark:bg-wine-700 text-white font-bold ring-2 ring-wine-300 dark:ring-wine-900 scale-105' 
+                                ${isSelected
+                                  ? 'bg-wine-800 dark:bg-wine-700 text-white font-bold ring-2 ring-wine-300 dark:ring-wine-900 scale-105'
                                   : 'bg-white dark:bg-gray-800 text-gray-650 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
                                 }
                                 /* Mobile-first circle style */

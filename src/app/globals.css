@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-rose-50 text-gray-800 transition-colors duration-300;
+  }
+  .dark body {
+    @apply bg-gray-950 text-gray-100;
+  }
+}
+
+@layer components {
+  .score-btn {
+    @apply flex flex-col items-center justify-center rounded-xl border-2 cursor-pointer transition-all duration-200 select-none;
+  }
+  .score-btn:hover:not(.selected) {
+    @apply scale-105 shadow-md;
+  }
+  .score-btn.selected {
+    @apply scale-105 shadow-lg;
+  }
+  .score-btn-mobile {
+    @apply flex items-center justify-center rounded-full cursor-pointer transition-all duration-150 select-none font-bold text-sm;
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { @apply bg-transparent; }
+::-webkit-scrollbar-thumb { @apply bg-wine-300 rounded-full; }
+.dark ::-webkit-scrollbar-thumb { @apply bg-wine-700; }

@@ -47,6 +47,18 @@ export default function PhotoCapture() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Dependências vazias para rodar apenas no mount
 
+  // Real-time clock para a marca d'água
+  useEffect(() => {
+    // Só atualiza o relógio se a câmera estiver viva e nenhuma foto foi tirada
+    if (!cameraActive || capturedImage) return
+
+    const interval = setInterval(() => {
+      setTimestamp(getFormattedDateTime())
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [cameraActive, capturedImage, getFormattedDateTime])
+
   // --- 1. LÓGICA DE CÂMERA UNIVERSAL ---
   const startCamera = async () => {
     try {

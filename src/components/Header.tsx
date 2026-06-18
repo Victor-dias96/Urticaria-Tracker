@@ -3,9 +3,11 @@
 interface HeaderProps {
   dark: boolean
   onToggleDark: () => void
+  startDate: string
+  onStartDateChange: (date: string) => void
 }
 
-export default function Header({ dark, onToggleDark }: HeaderProps) {
+export default function Header({ dark, onToggleDark, startDate, onStartDateChange }: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-rose-100 dark:border-gray-800 shadow-sm transition-colors duration-300">
       <div className="max-w-5xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
@@ -26,15 +28,15 @@ export default function Header({ dark, onToggleDark }: HeaderProps) {
 
         {/* Right side: week badge + dark toggle */}
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            className="hidden sm:flex items-center gap-1.5 bg-wine-50 dark:bg-wine-950 border border-wine-200 dark:border-wine-800 text-wine-700 dark:text-wine-300 rounded-full px-3 py-1.5 text-xs font-semibold hover:bg-wine-100 dark:hover:bg-wine-900 transition-colors duration-200"
-            aria-label="Semana atual"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            Semana atual
-          </button>
+          <div className="hidden sm:flex items-center gap-2 bg-wine-50 dark:bg-wine-950 border border-wine-200 dark:border-wine-800 text-wine-700 dark:text-wine-300 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors duration-200">
+            <span className="whitespace-nowrap">Semana de:</span>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => onStartDateChange(e.target.value)}
+              className="bg-transparent border-none outline-none text-wine-700 dark:text-wine-300 font-bold focus:ring-0 p-0 m-0 cursor-pointer text-xs"
+            />
+          </div>
 
           {/* Dark mode toggle */}
           <button

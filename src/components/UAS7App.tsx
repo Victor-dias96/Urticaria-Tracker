@@ -8,29 +8,43 @@ import PhotoCapture from '@/components/PhotoCapture'
 
 export type DayScore = { urticaria: number; itch: number }
 
-const WEEK_DAYS = [
-  { short: 'Seg', date: '30/06' },
-  { short: 'Ter', date: '01/07' },
-  { short: 'Qua', date: '02/07' },
-  { short: 'Qui', date: '03/07' },
-  { short: 'Sex', date: '04/07' },
-  { short: 'Sáb', date: '05/07' },
-  { short: 'Dom', date: '06/07' },
-]
-
-const INITIAL_SCORES: DayScore[] = [
-  { urticaria: 0, itch: 0 },  // Seg — unset
-  { urticaria: 1, itch: 1 },  // Ter
-  { urticaria: 2, itch: 1 },  // Qua
-  { urticaria: 1, itch: 2 },  // Qui
-  { urticaria: 3, itch: 2 },  // Sex
-  { urticaria: 2, itch: 3 },  // Sáb
-  { urticaria: -1, itch: -1 }, // Dom — não preenchido
-]
+const EMPTY_SCORES: DayScore[] = Array(7).fill({ urticaria: -1, itch: -1 })
 
 export default function UAS7App() {
   const [dark, setDark] = useState(false)
-  const [scores, setScores] = useState<DayScore[]>(INITIAL_SCORES)
+  
+  // Dynamic Start Date (defaults to today)
+  const [startDate, setStartDate] = useState(() => {
+    // We use a simple YYYY-MM-DD string to bind to <input type="date">
+    const d = new Date()
+    return d.toISOString().split('T')[0]
+  })
+
+  // Dynamic computation of the 7 days based on startDate
+  const [weekDays, setWeekDays] = useState<{ short: string; date: string }[]>([])
+  const [scores, setScores] = useState<DayScore[]>(EMPTY_SCORES)
+
+  useEffect(() => {
+    if (!startDate) return
+    const start = new Date(startDate + 'T00:00:00')
+    const days = []
+    const shortNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start)
+      d.setDate(d.getDate() + i)
+      const short = shortNames[d.getDay()]
+      const dateStr = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+      days.push({ short, date: dateStr })
+    }
+    setWeekDays(days)
+  }, [startDate])
+
+  const handleStartDateChange = (newDate: string) => {
+    setStartDate(newDate)
+    setScores(EMPTY_SCORES) // Reset scores when week changes
+  }
+
+
 
   useEffect(() => {
     const root = document.documentElement
@@ -59,12 +73,17 @@ export default function UAS7App() {
 
   return (
     <div className="min-h-screen bg-rose-50 dark:bg-gray-950 transition-colors duration-300">
-      <Header dark={dark} onToggleDark={() => setDark(d => !d)} />
+      <Header 
+        dark={dark} 
+        onToggleDark={() => setDark(d => !d)} 
+        startDate={startDate}
+        onStartDateChange={handleStartDateChange}
+      />
 
       <main className="max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6 sm:space-y-8">
         {/* Form section — full width */}
         <UAS7Form
-          weekDays={WEEK_DAYS}
+          weekDays={weekDays}
           scores={scores}
           onSetScore={setScore}
           filledDays={filledDays}

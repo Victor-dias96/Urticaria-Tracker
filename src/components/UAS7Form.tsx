@@ -23,13 +23,16 @@ export default function UAS7Form({
   filledDays,
   uas7Total
 }: UAS7FormProps) {
+  const firstDay = weekDays[0]?.date || ''
+  const lastDay = weekDays[6]?.date || ''
+
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-rose-100 dark:border-gray-800 shadow-sm p-4 sm:p-6 transition-all duration-300">
       {/* Title & Progress Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-            Formulário UAS7 — Semana de 30 Jun a 06 Jul
+            Formulário UAS7 — Semana de {firstDay} a {lastDay}
           </h2>
           <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1">
             Preencha diariamente. Entregue ao seu médico ao final de 7 dias consecutivos.

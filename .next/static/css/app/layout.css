@@ -781,6 +781,9 @@ video {
 .cursor-pointer {
   cursor: pointer;
 }
+.resize {
+  resize: both;
+}
 .flex-col {
   flex-direction: column;
 }
@@ -1389,6 +1392,10 @@ video {
 .hover\:bg-gray-50:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(249 250 251 / var(--tw-bg-opacity, 1));
+}
+.hover\:bg-rose-700:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(190 18 60 / var(--tw-bg-opacity, 1));
 }
 .hover\:bg-wine-800:hover {
   --tw-bg-opacity: 1;

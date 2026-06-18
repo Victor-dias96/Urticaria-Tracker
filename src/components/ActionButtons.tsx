@@ -1,6 +1,46 @@
 'use client'
 
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
+
 export default function ActionButtons() {
+  const handleExportPDF = async () => {
+    try {
+      const element = document.getElementById('uas7-form-capture')
+      if (!element) {
+        alert('Erro: Formulário não encontrado para exportação.')
+        return
+      }
+      
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true })
+      const imgData = canvas.toDataURL('image/png')
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth()
+      
+      const dateStr = new Date().toLocaleDateString('pt-BR')
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(16)
+      pdf.text(`Relatório UAS7 - ${dateStr}`, pdfWidth / 2, 15, { align: 'center' })
+      
+      // A margem lateral será 10mm, então a largura da imagem é pdfWidth - 20.
+      // Altura proporcional: (canvasHeight * imageWidth) / canvasWidth
+      const imgWidth = pdfWidth - 20
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      
+      pdf.addImage(imgData, 'PNG', 10, 25, imgWidth, imgHeight)
+      pdf.save(`Relatorio_UAS7_${dateStr.replace(/\//g, '-')}.pdf`)
+    } catch (error) {
+      console.error('Erro ao gerar PDF:', error)
+      alert('Falha ao gerar o arquivo PDF. Verifique as permissões ou tente novamente.')
+    }
+  }
+
   const handleSaveImage = () => {
     alert('Salvando como Imagem...')
   }
@@ -19,6 +59,17 @@ export default function ActionButtons() {
       <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">
         Ações
       </h3>
+      
+      {/* Exportar PDF (Vermelho/Vinho Médio) */}
+      <button
+        onClick={handleExportPDF}
+        className="w-full py-3.5 px-5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2.5 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        Exportar PDF
+      </button>
       
       {/* Salvar como Imagem (Vinho escuro) */}
       <button

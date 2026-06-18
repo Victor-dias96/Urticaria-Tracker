@@ -12,8 +12,8 @@ export default function PhotoCapture() {
   // cameraError: Gerencia mensagens de erro caso o usuário negue permissão ou falte hardware.
   const [cameraError, setCameraError] = useState<string | null>(null)
   
-  // cameraActive: Booleano auxiliar para saber se a câmera está rodando no momento.
-  const [cameraActive, setCameraActive] = useState(false)
+  // isCapturing: Booleano auxiliar para saber se a câmera está rodando no momento (substitui antigo cameraActive).
+  const [isCapturing, setIsCapturing] = useState(false)
   
   // timestamp: Texto gerado no momento da captura para colocar no Canvas de forma fixa e não-recalculada a cada microsegundo.
   const [timestamp, setTimestamp] = useState('')
@@ -50,14 +50,14 @@ export default function PhotoCapture() {
   // Real-time clock para a marca d'água
   useEffect(() => {
     // Só atualiza o relógio se a câmera estiver viva e nenhuma foto foi tirada
-    if (!cameraActive || capturedImage) return
+    if (!isCapturing || capturedImage) return
 
     const interval = setInterval(() => {
       setTimestamp(getFormattedDateTime())
     }, 1000)
 
     return () => clearInterval(interval)
-  }, [cameraActive, capturedImage, getFormattedDateTime])
+  }, [isCapturing, capturedImage, getFormattedDateTime])
 
   // --- 1. LÓGICA DE CÂMERA UNIVERSAL ---
   const startCamera = async () => {
@@ -68,23 +68,31 @@ export default function PhotoCapture() {
         stream.getTracks().forEach(track => track.stop())
       }
       
-      // getUserMedia solicita permissão ao usuário. 
-      // facingMode: 'environment' prioriza a câmera traseira de alta resolução em celulares.
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false
-      })
+      let mediaStream: MediaStream
+      try {
+        // Tenta forçar a câmera traseira primeiro (Mobile)
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        })
+      } catch (e: any) {
+        // Fallback robusto para Desktop ou dispositivos sem câmera mapeada como 'environment'
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        })
+      }
       
       setStream(mediaStream)
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
       }
-      setCameraActive(true)
+      setIsCapturing(true)
     } catch (err: any) {
       console.error('Erro ao acessar a câmera:', err)
       // Tratamento de erro resiliente: fornece feedback claro caso o usuário negue permissão ou use Desktop sem webcam.
       setCameraError('Permissão negada ou câmera não encontrada. Por favor, verifique as configurações.')
-      setCameraActive(false)
+      setIsCapturing(false)
     }
   }
 
@@ -93,8 +101,15 @@ export default function PhotoCapture() {
       stream.getTracks().forEach(track => track.stop())
       setStream(null)
     }
-    setCameraActive(false)
+    setIsCapturing(false)
   }, [stream])
+
+  const handleVideoReady = () => {
+    if (videoRef.current) {
+      // Força o ajuste de resolução (resize) e o play para contornar tela preta no iOS
+      videoRef.current.play().catch(e => console.error('Erro no autoPlay:', e))
+    }
+  }
 
   // --- 2. CAPTURA E PROCESSAMENTO (CANVAS) ---
   const drawWatermark = (ctx: CanvasRenderingContext2D, width: number, height: number, customTime?: string) => {
@@ -299,12 +314,13 @@ export default function PhotoCapture() {
         <canvas ref={canvasRef} className="hidden" />
 
         {/* FEED VIVO DA CÂMERA */}
-        {cameraActive && !capturedImage && !cameraError && (
+        {isCapturing && !capturedImage && !cameraError && (
           <video
             ref={videoRef}
             autoPlay
             playsInline // Fundamental: Impede o Safari no iOS de forçar o player nativo em full screen indesejável
             muted
+            onLoadedMetadata={handleVideoReady}
             className="absolute inset-0 w-full h-full object-cover animate-fade-in"
           />
         )}
@@ -319,7 +335,7 @@ export default function PhotoCapture() {
         )}
 
         {/* ESTADO DE ERRO & UI DE RECARREGAMENTO */}
-        {!cameraActive && !capturedImage && (
+        {!isCapturing && !capturedImage && (
           <div className="flex flex-col items-center justify-center text-center p-6 space-y-3 z-10">
             {cameraError ? (
               <div className="flex flex-col items-center">
@@ -342,7 +358,7 @@ export default function PhotoCapture() {
         )}
         
         {/* Dica da Watermark: só aparece para o usuário enxergar e se posicionar durante o vídeo vivo */}
-        {!capturedImage && !cameraError && cameraActive && (
+        {!capturedImage && !cameraError && isCapturing && (
              <div className="absolute bottom-4 px-3.5 py-1.5 rounded-lg bg-black/80 border border-wine-500/30 text-[#e5498a] text-[10px] sm:text-xs font-mono tracking-wider backdrop-blur-sm z-20 pointer-events-none">
                Registro de Urticária | {timestamp}
              </div>

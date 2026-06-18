@@ -40,15 +40,20 @@ export default function UAS7App() {
   const setScore = (dayIdx: number, field: 'urticaria' | 'itch', value: number) => {
     setScores(prev => {
       const next = [...prev]
-      next[dayIdx] = { ...next[dayIdx], [field]: value }
+      const currentValue = next[dayIdx][field]
+      // Toggle logic: reset to -1 if clicking already selected option, else set to value
+      next[dayIdx] = {
+        ...next[dayIdx],
+        [field]: currentValue === value ? -1 : value
+      }
       return next
     })
   }
 
-  const filledDays = scores.filter(s => s.urticaria >= 0 && s.itch >= 0).length
+  const filledDays = scores.filter(s => s.urticaria !== -1 && s.itch !== -1).length
 
   const uas7Total = scores.reduce((sum, s) => {
-    if (s.urticaria < 0 || s.itch < 0) return sum
+    if (s.urticaria === -1 || s.itch === -1) return sum
     return sum + s.urticaria + s.itch
   }, 0)
 

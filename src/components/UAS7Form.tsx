@@ -77,7 +77,7 @@ export default function UAS7Form({
             <tbody>
               {weekDays.map((day, idx) => {
                 const score = scores[idx]
-                const daySum = (score.urticaria >= 0 && score.itch >= 0) ? (score.urticaria + score.itch) : -1
+                const daySum = (score.urticaria === -1 || score.itch === -1) ? '—' : (score.urticaria + score.itch)
 
                 return (
                   <tr
@@ -154,7 +154,7 @@ export default function UAS7Form({
 
                     {/* Day Score Total */}
                     <td className="py-3 pr-4 text-right rounded-r-xl font-bold text-gray-800 dark:text-gray-200 text-sm sm:text-base">
-                      {daySum >= 0 ? daySum : '—'}
+                      {daySum}
                     </td>
                   </tr>
                 )

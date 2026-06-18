@@ -1,37 +1,268 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 
 export default function PhotoCapture() {
-  const [photoAdded, setPhotoAdded] = useState(false)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  // --- STATE MANAGEMENT ---
+  // stream: Guarda a referência do MediaStream da câmera para podermos parar a gravação depois (economia de hardware).
+  const [stream, setStream] = useState<MediaStream | null>(null)
+  
+  // capturedImage: Armazena a string Base64 (DataURL) da imagem gerada pelo Canvas.
+  const [capturedImage, setCapturedImage] = useState<string | null>(null)
+  
+  // cameraError: Gerencia mensagens de erro caso o usuário negue permissão ou falte hardware.
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  
+  // cameraActive: Booleano auxiliar para saber se a câmera está rodando no momento.
+  const [cameraActive, setCameraActive] = useState(false)
+  
+  // timestamp: Texto gerado no momento da captura para colocar no Canvas de forma fixa e não-recalculada a cada microsegundo.
+  const [timestamp, setTimestamp] = useState('')
+
+  // --- REFS ---
+  // Refs são fundamentais aqui para acessar os elementos DOM reais (vídeo, canvas e input) sem causar re-renders desnecessários.
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Função utilitária para formatar a data atual consistentemente. Memoizada com useCallback.
+  const getFormattedDateTime = useCallback(() => {
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const dateStr = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`
+    const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`
+    return `${dateStr} às ${timeStr}`
+  }, [])
+
+  // Inicializar câmera quando o componente for montado e garantir limpeza no unmount.
+  useEffect(() => {
+    setTimestamp(getFormattedDateTime())
+    startCamera()
+    
+    return () => {
+      // Cleanup function: Sempre pare a câmera quando o componente for desmontado para evitar memory leaks!
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop())
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Dependências vazias para rodar apenas no mount
+
+  // --- 1. LÓGICA DE CÂMERA UNIVERSAL ---
+  const startCamera = async () => {
+    try {
+      setCameraError(null)
+      // Se já houver um stream ativo, pare-o antes de tentar abrir um novo.
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop())
+      }
+      
+      // getUserMedia solicita permissão ao usuário. 
+      // facingMode: 'environment' prioriza a câmera traseira de alta resolução em celulares.
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      })
+      
+      setStream(mediaStream)
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream
+      }
+      setCameraActive(true)
+    } catch (err: any) {
+      console.error('Erro ao acessar a câmera:', err)
+      // Tratamento de erro resiliente: fornece feedback claro caso o usuário negue permissão ou use Desktop sem webcam.
+      setCameraError('Permissão negada ou câmera não encontrada. Por favor, verifique as configurações.')
+      setCameraActive(false)
+    }
+  }
+
+  const stopCamera = useCallback(() => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop())
+      setStream(null)
+    }
+    setCameraActive(false)
+  }, [stream])
+
+  // --- 2. CAPTURA E PROCESSAMENTO (CANVAS) ---
+  const drawWatermark = (ctx: CanvasRenderingContext2D, width: number, height: number, customTime?: string) => {
+    const timeText = customTime || getFormattedDateTime()
+    const fullText = `Registro de Urticária | ${timeText}`
+
+    // Posições da "moldura" (texto no rodapé da foto)
+    const bannerHeight = 46
+    const bannerY = height - bannerHeight - 20
+    
+    // Configurações do texto e moldura estrita conforme o design
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)' 
+    const bannerWidth = ctx.measureText(fullText).width + 100 // Margem extra para o background
+    const bannerX = (width - bannerWidth) / 2
+    
+    // Desenha o bloco semitransparente para dar contraste ao texto
+    ctx.beginPath()
+    if (ctx.roundRect) {
+        ctx.roundRect(bannerX, bannerY, bannerWidth, bannerHeight, 8)
+    } else {
+        ctx.rect(bannerX, bannerY, bannerWidth, bannerHeight)
+    }
+    ctx.fill()
+
+    // Renderização do texto no Canvas com a cor especificada (#e5498a)
+    ctx.fillStyle = '#e5498a'
+    ctx.font = 'bold 16px Inter, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    // Desenhamos exatamente no meio vertical e horizontal do banner overlay
+    ctx.fillText(fullText, width / 2, bannerY + (bannerHeight / 2))
+  }
 
   const handleCapture = () => {
-    // Simulate taking a photo or upload
-    if (photoAdded) {
-      setPhotoAdded(false)
-      setPreviewUrl(null)
-    } else {
-      setPhotoAdded(true)
-      // Use a placeholder/mock image or draw a simulator
-      setPreviewUrl('/api/placeholder/400/320')
-    }
-  }
-
-  const handleGalleryClick = () => {
-    alert('Abrindo Galeria de Fotos...')
-  }
-
-  const handleSendPhoto = () => {
-    if (!photoAdded) {
-      alert('Tire uma foto ou selecione da galeria primeiro!')
+    if (capturedImage) {
+      // Toggle UX: Se já tirou a foto, clicar no botão principal reseta o estado e permite "Tirar Outra".
+      setCapturedImage(null)
+      startCamera()
       return
     }
-    alert('Foto enviada com sucesso para o relatório!')
+
+    if (!videoRef.current || !canvasRef.current) return
+
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Passo Crítico 1: Igualamos as dimensões do <canvas> invisível à resolução real do <video>.
+    const width = video.videoWidth || 640
+    const height = video.videoHeight || 480
+    canvas.width = width
+    canvas.height = height
+
+    // Passo Crítico 2: Copia o frame atual do elemento <video> de fato "pinta" no <canvas>.
+    ctx.drawImage(video, 0, 0, width, height)
+
+    // Passo Crítico 3: Aplica o overlay do timestamp no frame desenhado no canvas.
+    const captureTime = getFormattedDateTime()
+    setTimestamp(captureTime)
+    drawWatermark(ctx, width, height, captureTime)
+
+    // Passo Crítico 4: Converte o canvas finalizado para uma Data URL Base64 que pode ser exibida no <img> ou baixada.
+    const dataUrl = canvas.toDataURL('image/png')
+    setCapturedImage(dataUrl)
+    
+    // Após capturar a imagem com sucesso, desligamos o stream de vídeo para economizar bateria e CPU.
+    stopCamera()
   }
 
+  // --- 3. INTEGRAÇÃO COM GALERIA ---
+  const handleGalleryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Lemos a imagem nativa selecionada de forma assíncrona
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onload = () => {
+        if (!canvasRef.current) return
+        const canvas = canvasRef.current
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+
+        // Fallback e Resize: Mantemos um limite de tamanho (ex: 1024px) para evitar DataUrls imensas de fotos 4K
+        const maxDim = 1024
+        let width = img.width
+        let height = img.height
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width)
+            width = maxDim
+          } else {
+            width = Math.round((width * maxDim) / height)
+            height = maxDim
+          }
+        }
+
+        canvas.width = width
+        canvas.height = height
+
+        // Reutilizamos a pipeline de canvas: desenhamos a foto upada e em seguida o watermark.
+        ctx.drawImage(img, 0, 0, width, height)
+
+        const uploadTime = getFormattedDateTime()
+        setTimestamp(uploadTime)
+        drawWatermark(ctx, width, height, uploadTime)
+
+        // Salva e reflete na UI a foto processada.
+        const dataUrl = canvas.toDataURL('image/png')
+        setCapturedImage(dataUrl)
+        stopCamera() // Interrompe câmera se estiver ativa.
+      }
+      img.src = event.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const triggerGallerySelector = () => {
+    // Interação programática: Dispara clique invisível no input file quando usuário clica no botão bonito.
+    if (fileInputRef.current) {
+      fileInputRef.current.click()
+    }
+  }
+
+  // --- 4. AÇÕES DE ENVIO E DOWNLOAD ---
+  const handleSendPhoto = async () => {
+    if (!capturedImage) return
+
+    try {
+      // Precisamos converter a string Base64 (DataURL) de volta para um Blob/File binário para usar na API de compartilhamento nativa.
+      const res = await fetch(capturedImage)
+      const blob = await res.blob()
+      const file = new File([blob], `urticaria_${Date.now()}.png`, { type: 'image/png' })
+
+      // Progressively Enhancement: Detecta se a Web Share API é suportada no navegador atual (comum em Mobile)
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'Registro de Urticária',
+          text: `Acompanhamento diário do Urticaria Tracker. Data: ${timestamp}`
+        })
+      } else {
+        // Fallback: Desktop comum ou browser que não suporta Share.
+        // Simulamos o clique em uma âncora escondida para disparar download nativo do arquivo .png.
+        forceDownload(capturedImage, `urticaria_${Date.now()}.png`)
+      }
+    } catch (error) {
+      console.error('Falha ao compartilhar imagem:', error)
+      // Safety net: em caso de cancelamento da share tray ou outro erro imprevisto, fazemos o fallback de download seguro.
+      forceDownload(capturedImage, `urticaria_${Date.now()}.png`)
+    }
+  }
+
+  // Utilitário simples para disparar downloads locais via browser
+  const forceDownload = (dataUrl: string, filename: string) => {
+    const link = document.createElement('a')
+    link.href = dataUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  // --- 5. INTERFACE E ESTILIZAÇÃO (TAILWIND) ---
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-rose-100 dark:border-gray-800 shadow-sm p-4 sm:p-5 transition-all duration-300 flex flex-col h-full">
-      {/* Header Info */}
+    // Componente wrapper com as lógicas responsivas de altura cheia flex-col. Consistente com cores do app e classes explícitas (rounded-lg, border-zinc-800)
+    <div className="bg-white dark:bg-zinc-900 rounded-lg border border-rose-100 dark:border-zinc-800 shadow-sm p-4 sm:p-5 transition-all duration-300 flex flex-col h-full">
+      {/* Input de arquivo nativo escondido por debaixo do tapete (Integration with Gallery) */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleGalleryFileChange}
+        accept="image/*"
+        className="hidden"
+      />
+
+      {/* Header e títulos informativos */}
       <div className="flex items-center gap-2.5 mb-4">
         <div className="w-8 h-8 rounded-lg bg-wine-50 dark:bg-wine-950/70 flex items-center justify-center text-wine-600 dark:text-wine-400">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -49,107 +280,114 @@ export default function PhotoCapture() {
         </div>
       </div>
 
-      {/* Visor / Viewfinder Area */}
-      <div className="relative flex-1 min-h-[240px] sm:min-h-[280px] bg-gray-950 dark:bg-black rounded-xl overflow-hidden flex flex-col items-center justify-center border border-gray-800 shadow-inner group">
+      {/* Viewfinder / Visor da Câmera responsivo */}
+      <div className="relative flex-1 min-h-[260px] sm:min-h-[300px] bg-zinc-950 dark:bg-black rounded-lg overflow-hidden flex flex-col items-center justify-center border border-zinc-800 shadow-inner group">
         
-        {/* Decorative corner brackets inside viewfinder */}
-        <div className="absolute top-4 left-4 w-4 h-4 border-t-2 border-l-2 border-wine-500/80 rounded-tl-sm pointer-events-none transition-all duration-300 group-hover:scale-110" />
-        <div className="absolute top-4 right-4 w-4 h-4 border-t-2 border-r-2 border-wine-500/80 rounded-tr-sm pointer-events-none transition-all duration-300 group-hover:scale-110" />
-        <div className="absolute bottom-4 left-4 w-4 h-4 border-b-2 border-l-2 border-wine-500/80 rounded-bl-sm pointer-events-none transition-all duration-300 group-hover:scale-110" />
-        <div className="absolute bottom-4 right-4 w-4 h-4 border-b-2 border-r-2 border-wine-500/80 rounded-br-sm pointer-events-none transition-all duration-300 group-hover:scale-110" />
+        {/* Renderizador de Imagens Invisível */}
+        <canvas ref={canvasRef} className="hidden" />
 
-        {photoAdded ? (
-          /* Simulated image capture state */
-          <div className="absolute inset-0 w-full h-full flex items-center justify-center p-3 animate-scale-in">
-            {/* Viewfinder outer ring grid overlay */}
-            <div className="absolute inset-0 opacity-15 pointer-events-none bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-transparent via-transparent to-black" />
-            <div className="w-full h-full border-2 border-dashed border-wine-500/40 rounded-lg flex flex-col items-center justify-center bg-gray-900/50 backdrop-blur-sm relative overflow-hidden">
-              {/* Center icon / preview state */}
-              <div className="flex flex-col items-center gap-2">
-                <div className="w-12 h-12 rounded-full bg-wine-500/20 flex items-center justify-center text-wine-400">
-                  <svg className="w-6 h-6 animate-pulse-soft" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <span className="text-xs text-wine-300 font-semibold uppercase tracking-wider">
-                  Foto Capturada
-                </span>
-                <span className="text-[10px] text-gray-400 font-mono">
-                  urticaria_06072026_1432.jpg
-                </span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Idle camera simulator state */
-          <div className="flex flex-col items-center justify-center text-center p-6 space-y-3 z-10 select-none">
-            <div className="relative">
-              <div className="w-14 h-14 rounded-full bg-gray-900 flex items-center justify-center text-gray-500 border border-gray-800 transition-transform duration-300 group-hover:scale-105">
-                <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400 font-medium">Nenhuma foto selecionada</p>
-              <p className="text-[10px] text-gray-650 mt-1 max-w-[200px]">
-                Toque no botão disparador abaixo para simular a captura de uma imagem da lesão.
-              </p>
-            </div>
-          </div>
+        {/* FEED VIVO DA CÂMERA */}
+        {cameraActive && !capturedImage && !cameraError && (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline // Fundamental: Impede o Safari no iOS de forçar o player nativo em full screen indesejável
+            muted
+            className="absolute inset-0 w-full h-full object-cover animate-fade-in"
+          />
         )}
 
-        {/* Floating timestamp badge Overlay */}
-        <div className="absolute bottom-4 px-3.5 py-1.5 rounded-lg bg-black/70 border border-wine-500/30 text-wine-400 text-[10px] sm:text-xs font-mono tracking-wider backdrop-blur-sm z-20">
-          Registro de Urticária | 06/07/2026 às 14:32
-        </div>
+        {/* FOTO CAPTURADA FINALIZADA (Base64 Overlay) */}
+        {capturedImage && (
+          <img
+            src={capturedImage}
+            alt="Registro de Urticária Capturado"
+            className="absolute inset-0 w-full h-full object-cover animate-scale-in z-10"
+          />
+        )}
+
+        {/* ESTADO DE ERRO & UI DE RECARREGAMENTO */}
+        {!cameraActive && !capturedImage && (
+          <div className="flex flex-col items-center justify-center text-center p-6 space-y-3 z-10">
+            {cameraError ? (
+              <div className="flex flex-col items-center">
+                <div className="text-rose-500 bg-rose-500/10 p-3 rounded-lg mb-3">
+                  <p className="text-xs font-semibold">{cameraError}</p>
+                </div>
+                <button
+                  onClick={startCamera}
+                  className="text-[11px] px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-md font-medium transition-colors border border-zinc-700"
+                >
+                  Tentar Novamente
+                </button>
+              </div>
+            ) : (
+               <div className="flex flex-col items-center">
+                 <p className="text-xs text-zinc-400 animate-pulse">Acessando câmera nativa...</p>
+               </div>
+            )}
+          </div>
+        )}
+        
+        {/* Dica da Watermark: só aparece para o usuário enxergar e se posicionar durante o vídeo vivo */}
+        {!capturedImage && !cameraError && cameraActive && (
+             <div className="absolute bottom-4 px-3.5 py-1.5 rounded-lg bg-black/80 border border-wine-500/30 text-[#e5498a] text-[10px] sm:text-xs font-mono tracking-wider backdrop-blur-sm z-20 pointer-events-none">
+               Registro de Urticária | {timestamp}
+             </div>
+        )}
       </div>
 
-      {/* Shutter / Bottom Controls Panel */}
+      {/* PAINEL DE CONTROLES INFERIORES */}
       <div className="mt-4 flex items-center justify-between gap-4 px-2">
-        {/* Gallery */}
+        {/* Botão de acessar Input de Galeria */}
         <button
-          onClick={handleGalleryClick}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 border border-gray-200 dark:border-gray-850 text-gray-600 dark:text-gray-400 text-xs font-semibold transition-all duration-150"
+          onClick={triggerGallerySelector}
+          className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs font-semibold transition-all duration-150 hover:scale-[1.03]"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <svg className="w-4 h-4 text-wine-600 dark:text-wine-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
           Galeria
         </button>
 
-        {/* Main Disparo Shutter Button */}
+        {/* Botão Central: Disparador e Reset */}
         <button
           onClick={handleCapture}
-          aria-label="Disparador da câmera"
+          aria-label={capturedImage ? "Tirar outra foto" : "Capturar foto"}
           className={`
-            relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 shadow-md
-            ${photoAdded
-              ? 'bg-rose-600 ring-4 ring-rose-200 dark:ring-rose-950'
-              : 'bg-wine-800 ring-4 ring-wine-100 dark:ring-wine-950'
+            relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 shadow-md z-30
+            ${capturedImage
+              ? 'bg-rose-600 ring-4 ring-rose-100 dark:ring-rose-950/60'
+              : 'bg-wine-800 ring-4 ring-wine-100 dark:ring-wine-950/60'
             }
           `}
         >
-          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
+          {capturedImage ? (
+            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3-3 3 3m-3-3v12" />
+            </svg>
+          ) : (
+            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          )}
         </button>
 
-        {/* Send Action */}
+        {/* Ação de Enviar Nativo ou Download Fallback */}
         <button
           onClick={handleSendPhoto}
-          disabled={!photoAdded}
+          disabled={!capturedImage}
           className={`
-            flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-150 border
-            ${photoAdded
-              ? 'bg-wine-50 border-wine-200 text-wine-700 hover:bg-wine-100 dark:bg-wine-950/40 dark:border-wine-800 dark:text-wine-300 cursor-pointer'
-              : 'bg-gray-50 border-gray-200 text-gray-350 dark:bg-gray-900 dark:border-gray-850 dark:text-gray-650 cursor-not-allowed'
+            flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-xs font-bold transition-all duration-150 border
+            ${capturedImage
+              ? 'bg-wine-700 hover:bg-wine-800 text-white border-wine-600 shadow-md cursor-pointer hover:scale-[1.03]'
+              : 'bg-zinc-50 border-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:border-zinc-750 dark:text-zinc-650 cursor-not-allowed'
             }
           `}
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 10.742l8.172-3.268m0 0l-3.268 8.172m3.268-8.172L8.684 13.258m8.172-5.784L5.13 15.906c-.53.212-.767.82-.52 1.325.247.505.864.707 1.38.452l2.695-1.328m8.172-8.172l-2.694 1.328" />
           </svg>
           Enviar
         </button>

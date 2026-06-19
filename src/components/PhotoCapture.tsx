@@ -88,10 +88,14 @@ export default function PhotoCapture() {
   const startCamera = async () => {
     try {
       setCameraError(null)
-      // Se já houver um stream ativo, pare-o antes de tentar abrir um novo.
+      // PASSO 1: Se já houver um stream ativo, pare todos os tracks anteriores.
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
         streamRef.current = null
+      }
+      // PASSO 2: Limpe explicitamente a referência de vídeo para evitar tela preta residual.
+      if (videoRef.current) {
+        videoRef.current.srcObject = null
       }
       
       let mediaStream: MediaStream
@@ -109,10 +113,13 @@ export default function PhotoCapture() {
         })
       }
       
+      // PASSO 3: Associe o NOVO stream limpo ao elemento de vídeo.
       streamRef.current = mediaStream
       setStream(mediaStream)
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
+        // Força o play imediatamente após atribuir o novo stream
+        videoRef.current.play().catch(e => console.error('Erro no autoPlay:', e))
       }
       setIsCapturing(true)
     } catch (err: unknown) {
@@ -124,9 +131,13 @@ export default function PhotoCapture() {
   }
 
   const stopCamera = useCallback(() => {
+    // Para todos os tracks e limpa a referência do vídeo completamente
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop())
       streamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
     }
     setStream(null)
     setIsCapturing(false)
@@ -202,11 +213,27 @@ export default function PhotoCapture() {
     stopCamera()
   }
 
-  // Botão "Tirar outra foto": limpa o estado e reinicia a câmera do zero
+  // Botão "Tirar outra foto": limpa completamente o estado anterior e reinicia a câmera do zero
   const handleRetake = () => {
+    // 1. Para todos os tracks do stream anterior (se ainda existirem)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    // 2. Limpa explicitamente o srcObject do vídeo para evitar tela preta residual
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+    // 3. Redefine o estado da imagem capturada e stream
+    setStream(null)
     setCapturedImage(null)
+    setIsCapturing(false)
     setTimestamp(getFormattedDateTime())
-    startCamera()
+    // 4. Chama getUserMedia novamente para obter um NOVO stream limpo
+    // Usamos setTimeout para garantir que o React processou os estados limpos antes de remontar o vídeo
+    setTimeout(() => {
+      startCamera()
+    }, 100)
   }
 
   // --- 3. INTEGRAÇÃO COM GALERIA ---

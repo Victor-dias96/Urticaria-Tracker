@@ -2,8 +2,51 @@
 
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import { DayScore } from './UAS7App'
 
-export default function ActionButtons() {
+interface ActionButtonsProps {
+  scores: DayScore[]
+  weekDays: { short: string; date: string }[]
+  uas7Total: number
+}
+
+export default function ActionButtons({ scores, weekDays, uas7Total }: ActionButtonsProps) {
+  // --- UTILITÁRIOS DE FORMATAÇÃO ---
+
+  /**
+   * Gera a mensagem de texto médica formatada com os dados da semana.
+   * Usada tanto para WhatsApp quanto para E-mail.
+   */
+  const generateReportText = (): string => {
+    const dateStr = new Date().toLocaleDateString('pt-BR')
+    const firstDay = weekDays[0]?.date || ''
+    const lastDay = weekDays[6]?.date || ''
+
+    let details = ''
+    weekDays.forEach((day, idx) => {
+      const score = scores[idx]
+      const urticaria = score.urticaria === -1 ? '—' : score.urticaria
+      const itch = score.itch === -1 ? '—' : score.itch
+      details += `- ${day.short} (${day.date}): ${urticaria} | ${itch}\n`
+    })
+
+    const filledDays = scores.filter(s => s.urticaria !== -1 && s.itch !== -1).length
+
+    const text = `📋 *Relatório Semanal UAS7 - Urticaria Tracker*\n\n` +
+      `📅 Semana: ${firstDay} a ${lastDay}\n` +
+      `📆 Gerado em: ${dateStr}\n\n` +
+      `*Pontuação Total:* ${uas7Total} / 42 pontos\n` +
+      `*Dias preenchidos:* ${filledDays} de 7\n\n` +
+      `*Detalhamento Diário (Urticária | Coceira):*\n` +
+      details + `\n` +
+      `---\n` +
+      `Gerado pelo Urticaria Tracker\n` +
+      `https://urticaria-tracker.vercel.app`
+
+    return text
+  }
+
+  // --- 1. EXPORTAR PDF ---
   const handleExportPDF = async () => {
     try {
       const element = document.getElementById('uas7-form-capture')
@@ -41,17 +84,49 @@ export default function ActionButtons() {
     }
   }
 
-  const handleSaveImage = () => {
-    alert('Salvando como Imagem...')
+  // --- 2. SALVAR COMO IMAGEM (html2canvas → PNG download) ---
+  const handleSaveImage = async () => {
+    try {
+      const element = document.getElementById('uas7-form-capture')
+      if (!element) {
+        alert('Erro: Formulário não encontrado para exportação.')
+        return
+      }
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: null // Preserva o background original (dark mode incluso)
+      })
+
+      const dataUrl = canvas.toDataURL('image/png')
+      const dateStr = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')
+
+      // Cria um elemento <a> temporário para disparar o download automático
+      const link = document.createElement('a')
+      link.href = dataUrl
+      link.download = `relatorio-uas7-${dateStr}.png`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (error) {
+      console.error('Erro ao salvar como imagem:', error)
+      alert('Falha ao gerar a imagem. Tente novamente.')
+    }
   }
 
+  // --- 3. COMPARTILHAR VIA WHATSAPP ---
   const handleShareWhatsApp = () => {
-    const url = 'https://api.whatsapp.com/send?text=Confira meu score UAS7 semanal do Urticaria Tracker!'
+    const text = generateReportText()
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`
     window.open(url, '_blank')
   }
 
+  // --- 4. ENVIAR POR E-MAIL ---
   const handleSendEmail = () => {
-    window.location.href = 'mailto:medico@exemplo.com?subject=Relatorio UAS7 - Urticaria Tracker&body=Ola, segue o meu score UAS7 desta semana...'
+    const text = generateReportText()
+    const subject = `Relatório UAS7 - Urticaria Tracker - ${new Date().toLocaleDateString('pt-BR')}`
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`
   }
 
   return (

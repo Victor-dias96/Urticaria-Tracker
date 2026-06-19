@@ -94,7 +94,7 @@ export default function UAS7App() {
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Left column */}
           <div className="flex flex-col gap-4 lg:w-[480px] xl:w-[520px] shrink-0">
-            <ActionButtons />
+            <ActionButtons scores={scores} weekDays={weekDays} uas7Total={uas7Total} />
             <InterpretationCard uas7Total={uas7Total} />
           </div>
           {/* Right column */}

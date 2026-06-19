@@ -22,7 +22,14 @@ export default function UAS7App() {
 
   // Dynamic computation of the 7 days based on startDate
   const [weekDays, setWeekDays] = useState<{ short: string; date: string }[]>([])
-  const [scores, setScores] = useState<DayScore[]>(EMPTY_SCORES)
+  
+  const [scoresData, setScoresData] = useState<{ week: string; scores: DayScore[] }>({
+    week: '',
+    scores: EMPTY_SCORES
+  })
+
+  // Deriva o estado de scores correspondente à semana selecionada
+  const scores = scoresData.week === startDate ? scoresData.scores : EMPTY_SCORES
 
   useEffect(() => {
     if (!startDate) return
@@ -39,12 +46,39 @@ export default function UAS7App() {
     setWeekDays(days)
   }, [startDate])
 
+  // useEffect 1: Carrega os scores do localStorage ao montar ou ao mudar de semana
+  useEffect(() => {
+    if (!startDate) return
+    const key = `urticaria_tracker_scores_${startDate}`
+    try {
+      const stored = localStorage.getItem(key)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (Array.isArray(parsed) && parsed.length === 7) {
+          setScoresData({ week: startDate, scores: parsed })
+          return
+        }
+      }
+    } catch (e) {
+      console.error('Error reading from localStorage:', e)
+    }
+    setScoresData({ week: startDate, scores: EMPTY_SCORES })
+  }, [startDate])
+
+  // useEffect 2: Salva os scores no localStorage sempre que forem alterados
+  useEffect(() => {
+    if (!startDate || scoresData.week !== startDate) return
+    const key = `urticaria_tracker_scores_${startDate}`
+    try {
+      localStorage.setItem(key, JSON.stringify(scoresData.scores))
+    } catch (e) {
+      console.error('Error writing to localStorage:', e)
+    }
+  }, [scoresData, startDate])
+
   const handleStartDateChange = (newDate: string) => {
     setStartDate(newDate)
-    setScores(EMPTY_SCORES) // Reset scores when week changes
   }
-
-
 
   useEffect(() => {
     const root = document.documentElement
@@ -52,15 +86,18 @@ export default function UAS7App() {
   }, [dark])
 
   const setScore = (dayIdx: number, field: 'urticaria' | 'itch', value: number) => {
-    setScores(prev => {
-      const next = [...prev]
-      const currentValue = next[dayIdx][field]
+    setScoresData(prev => {
+      const nextScores = [...prev.scores]
+      const currentValue = nextScores[dayIdx][field]
       // Toggle logic: reset to -1 if clicking already selected option, else set to value
-      next[dayIdx] = {
-        ...next[dayIdx],
+      nextScores[dayIdx] = {
+        ...nextScores[dayIdx],
         [field]: currentValue === value ? -1 : value
       }
-      return next
+      return {
+        week: prev.week,
+        scores: nextScores
+      }
     })
   }
 

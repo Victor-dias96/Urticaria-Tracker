@@ -5,6 +5,7 @@ import UAS7Form from '@/components/UAS7Form'
 import ActionButtons from '@/components/ActionButtons'
 import InterpretationCard from '@/components/InterpretationCard'
 import PhotoCapture from '@/components/PhotoCapture'
+import SupabaseTest from '@/components/SupabaseTest'
 
 export type DayScore = { urticaria: number; itch: number }
 
@@ -118,6 +119,8 @@ export default function UAS7App() {
       />
 
       <main className="max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-6 sm:space-y-8">
+        <SupabaseTest />
+        
         {/* Form section — full width */}
         <UAS7Form
           weekDays={weekDays}

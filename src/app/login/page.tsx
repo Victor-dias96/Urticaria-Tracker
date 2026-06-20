@@ -100,8 +100,8 @@ export default function LoginPage() {
 
       <div className="max-w-md w-full space-y-8 bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl border border-transparent dark:border-slate-700/50">
         <div className="flex flex-col items-center">
-          <div className="w-16 h-16 bg-rose-700 rounded-full flex items-center justify-center shadow-lg mb-4">
-            <span className="text-3xl font-bold text-white">U</span>
+          <div className="w-24 h-24 rounded-full shadow-lg mb-4 overflow-hidden bg-white dark:bg-slate-800 flex items-center justify-center">
+            <img src="/logo.png" alt="Urticaria Tracker Logo" className="w-full h-full object-contain p-2" />
           </div>
           <h2 className="mt-2 text-center text-3xl font-extrabold text-slate-900 dark:text-white">
             Urticaria Tracker

@@ -23,8 +23,8 @@ export default function Header({ dark, onToggleDark, startDate, onStartDateChang
       <div className="max-w-5xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
         {/* Logo + title */}
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-wine-600 to-wine-800 flex items-center justify-center shrink-0 shadow-md">
-            <span className="text-white font-bold text-sm sm:text-base leading-none">U</span>
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shrink-0 shadow-md overflow-hidden bg-white dark:bg-gray-800 flex items-center justify-center">
+            <img src="/logo.png" alt="Urticaria Tracker Logo" className="w-full h-full object-contain p-0.5" />
           </div>
           <div className="min-w-0">
             <h1 className="text-wine-700 dark:text-wine-300 font-bold text-base sm:text-lg leading-tight truncate">

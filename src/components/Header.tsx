@@ -1,5 +1,7 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 interface HeaderProps {
   dark: boolean
   onToggleDark: () => void
@@ -8,6 +10,14 @@ interface HeaderProps {
 }
 
 export default function Header({ dark, onToggleDark, startDate, onStartDateChange }: HeaderProps) {
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+    router.refresh()
+  }
+
   return (
     <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-rose-100 dark:border-gray-800 shadow-sm transition-colors duration-300">
       <div className="max-w-5xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-3">
@@ -54,6 +64,15 @@ export default function Header({ dark, onToggleDark, startDate, onStartDateChang
                 <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
               </svg>
             )}
+          </button>
+
+          {/* Logout button */}
+          <button
+            onClick={handleLogout}
+            title="Sair da conta"
+            className="flex items-center justify-center bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-800/50 text-rose-700 dark:text-rose-300 px-3 h-9 rounded-lg text-sm font-semibold transition-colors duration-200 border border-rose-200 dark:border-rose-800"
+          >
+            Sair
           </button>
         </div>
       </div>

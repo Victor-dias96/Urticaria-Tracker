@@ -1,25 +1,35 @@
-# 🛑 Urticaria Tracker — UAS7 Control
+# 🛡️ Urticaria Tracker — Diário Clínico UAS7
 
-> Aplicativo responsivo de monitoramento médico semanal de urticária crônica espontânea, baseado no protocolo clínico internacional UAS7.
-
----
-
-## 🚀 Tecnologias Core
-
-*   **Framework:** Next.js (App Router)
-*   **Estilização:** Tailwind CSS (Dark Mode nativo)
-*   **Back-end & Infra:** Supabase (PostgreSQL, Auth & Storage)
-*   **Manipulação de Mídia:** WebRTC API (Acesso à Câmera/Webcam) & HTML5 Canvas API
-*   **Exportação:** html2canvas & jsPDF
+O **Urticaria Tracker** é uma plataforma digital full-stack desenvolvida especificamente para pacientes diagnosticados com Urticária Crônica Espontânea (UCE). O sistema automatiza o monitoramento de crises seguindo rigorosamente o protocolo médico internacional **UAS7 (Urticaria Activity Score)**, transformando o registro diário de sintomas em relatórios precisos para suporte a decisões clínicas.
 
 ---
 
-## 🛠️ Funcionalidades Implementadas
+## 💻 Core Technologies (Stack Técnica Principal)
 
-*   **Formulário UAS7 Reativo:** Interface dinâmica para registro diário de intensidade de Urticária e Coceira (Scores de 0 a 3).
-*   **Lógica de Desmarcação (Toggle):** Permite reverter seleções e calcula de forma inteligente os dias pendentes na grade médica.
-*   **Módulo Fotográfico Híbrido:**
-    *   **Desktop:** Inicialização de stream de vídeo da Webcam com controle estrito de ciclo de vida de tracks de hardware (evitando memory leaks e congelamentos de vídeo).
-    *   **Mobile:** Fallback otimizado para o seletor nativo do sistema operacional, unificando a captura de fotos e uploads da galeria sem gargalos de permissão WebRTC.
-    *   **Canvas Watermark:** Estampagem dinâmica em tempo real de metadados clínicos (Data/Hora no formato `DD/MM/YYYY às HH:mm`) diretamente nos pixels da imagem gerada.
-*   **Painel Multiações:** Geração automatizada de relatórios em formato PDF (A4 centralizado), download da viewport em PNG, e compartilhamento de relatórios formatados via WhatsApp e e-mail nativos.
+- **Framework:** Next.js (React) com App Router para renderização eficiente e roteamento híbrido.
+- **Linguagem:** TypeScript para tipagem estática, reduzindo bugs em tempo de execução e garantindo consistência nos payloads de saúde.
+- **Estilização:** Tailwind CSS utilizando conceitos de design mobile-first e componentes fluidos de alta fidelidade visual.
+- **Banco de Dados Relacional:** PostgreSQL gerenciado via **Supabase**, com estruturação de integridade referencial via Foreign Keys.
+- **Segurança de Dados:** **Row Level Security (RLS)** ativo em nível de banco de dados, blindando o acesso e garantindo que cada paciente acesse estritamente seus próprios registros médicos.
+- **Autenticação:** Supabase Auth (Client & Server-side Session Management) acoplado a **Next.js Middlewares** para proteção de rotas nativa na camada de borda (Edge).
+- **Deploy & Infraestrutura:** Vercel Cloud Platform com pipelines de Integração Contínua (CI/CD).
+
+---
+
+## 🚀 Funcionalidades Implementadas
+
+### 🔒 Controle de Acesso e Autenticação Robusta
+- Sistema de login e cadastro integrado ao provedor de identidade seguro do Supabase.
+- Middleware customizado interceptando requisições HTTP para proteção de rotas privadas, mitigando acessos não autorizados antes mesmo da renderização do componente.
+
+### 📈 Diário Clínico UAS7 Automatizado
+- Painel interativo para inserção das métricas diárias de **Intensidade das Urticárias** e **Nível de Coceira** (escala clínica de 0 a 3).
+- Mecanismo de **Upsert Inteligente**: O sistema identifica automaticamente se o usuário está criando um novo registro ou atualizando uma entrada do dia corrente, sincronizando os dados em tempo real no banco de dados.
+
+### 🛡️ Resiliência de Dados e Tratamento de Constraints
+- Camada de tradução de dados no Front-end que converte estados parciais e remoções de notas em valores nulos (`null`) aceitos pelo PostgreSQL, respeitando as *Check Constraints* de validação clínica e evitando erros de requisição (`400 Bad Request`).
+- Inicialização de estado otimizada com `.maybeSingle()`, contornando falhas de processamento assíncrono caso o usuário acesse a plataforma pela primeira vez no dia.
+
+### 🎨 Experiência de Usuário (UX/UI) Fluida
+- Micro-interações dinâmicas ao selecionar notas, fornecendo feedback tátil e visual instantâneo para o paciente.
+- Manutenção de estado resiliente a atualizações de página (*Fast Refresh* e gerenciamento de cache local).

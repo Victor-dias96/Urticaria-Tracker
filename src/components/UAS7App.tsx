@@ -42,10 +42,10 @@ export default function UAS7App() {
   })
 
   /**
-   * Mapa de data (YYYY-MM-DD) → URL pública da foto salva no Supabase Storage.
+   * Mapa de data (YYYY-MM-DD) → Lista de URLs públicas das fotos salvas no Supabase Storage.
    * Carregado junto com os scores ao buscar a semana; atualizado após cada upload.
    */
-  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({})
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string[]>>({})
 
   // Deriva o estado de scores correspondente à semana selecionada
   const scores = scoresData.week === startDate ? scoresData.scores : EMPTY_SCORES
@@ -66,27 +66,37 @@ export default function UAS7App() {
     setWeekDays(days)
   }, [startDate])
 
-  // Fetch scores (and photo_url) from Supabase
+  // Fetch scores (from uas7_entries) and photos (from urticaria_photos) from Supabase
   useEffect(() => {
     if (!startDate || !userId || weekDays.length === 0) return
 
-    const loadScores = async () => {
+    const loadScoresAndPhotos = async () => {
       const dates = weekDays.map(d => d.fullDate)
       try {
-        const { data, error } = await supabase
+        // Busca notas do diário
+        const { data: entriesData, error: entriesError } = await supabase
           .from('uas7_entries')
-          // Inclui photo_url no SELECT para carregar miniaturas salvas anteriormente
-          .select('date, urticaria_score, coceira_score, photo_url')
+          .select('date, urticaria_score, coceira_score')
           .eq('user_id', userId)
           .in('date', dates)
 
-        if (error) throw error
+        if (entriesError) throw entriesError
+
+        // Busca todas as fotos salvas para o período da semana correspondente
+        const { data: photosData, error: photosError } = await supabase
+          .from('urticaria_photos')
+          .select('date, photo_url')
+          .eq('user_id', userId)
+          .in('date', dates)
+          .order('created_at', { ascending: true }) // Ordem cronológica das fotos do dia
+
+        if (photosError) throw photosError
 
         const newScores = Array(7).fill(null).map(() => ({ urticaria: -1, itch: -1 }))
-        const newPhotoUrls: Record<string, string> = {}
+        const newPhotoUrls: Record<string, string[]> = {}
 
-        if (data) {
-          data.forEach(entry => {
+        if (entriesData) {
+          entriesData.forEach(entry => {
             const idx = weekDays.findIndex(d => d.fullDate === entry.date)
             if (idx !== -1) {
               newScores[idx] = { 
@@ -94,10 +104,15 @@ export default function UAS7App() {
                 itch: entry.coceira_score ?? -1 
               }
             }
-            // Mapeia a URL da foto para a data correspondente (se existir)
-            if (entry.photo_url) {
-              newPhotoUrls[entry.date] = entry.photo_url
+          })
+        }
+
+        if (photosData) {
+          photosData.forEach(photo => {
+            if (!newPhotoUrls[photo.date]) {
+              newPhotoUrls[photo.date] = []
             }
+            newPhotoUrls[photo.date].push(photo.photo_url)
           })
         }
         
@@ -108,7 +123,7 @@ export default function UAS7App() {
       }
     }
 
-    loadScores()
+    loadScoresAndPhotos()
   }, [startDate, userId, weekDays])
 
   const handleStartDateChange = (newDate: string) => {
@@ -204,39 +219,36 @@ export default function UAS7App() {
 
   /**
    * Callback disparado pelo PhotoCapture após upload bem-sucedido.
-   * Persiste a `photo_url` no registro do banco de dados via upsert e atualiza o state local.
+   * Persiste a `photo_url` na tabela `urticaria_photos` via insert e atualiza o state local.
    *
    * @param publicUrl  - URL pública retornada pelo Supabase Storage
-   * @param date       - Data no formato YYYY-MM-DD associada à foto (sempre hoje, decisão do produto)
+   * @param date       - Data no formato YYYY-MM-DD associada à foto
    */
   const handlePhotoSaved = useCallback(async (publicUrl: string, date: string) => {
     if (!userId) return
 
     // Atualiza o state local imediatamente para feedback visual instantâneo
-    setPhotoUrls(prev => ({ ...prev, [date]: publicUrl }))
+    setPhotoUrls(prev => {
+      const currentList = prev[date] ?? []
+      return { ...prev, [date]: [...currentList, publicUrl] }
+    })
 
     try {
-      console.log('📸 Salvando photo_url no banco:', { date, publicUrl })
+      console.log('📸 Salvando photo_url no banco (urticaria_photos):', { date, publicUrl })
 
-      // Upsert: se já existir entrada para esse user+date, atualiza apenas photo_url;
-      // caso contrário, cria a linha com a URL (scores ficam null até o usuário preencher).
       const { error } = await supabase
-        .from('uas7_entries')
-        .upsert(
-          {
-            user_id: userId,
-            date,
-            photo_url: publicUrl,
-          },
-          { onConflict: 'user_id, date' }
-        )
+        .from('urticaria_photos')
+        .insert({
+          user_id: userId,
+          date,
+          photo_url: publicUrl,
+        })
 
       if (error) {
-        console.error('Erro ao salvar photo_url no banco:', error)
-        // Não reverte o state local pois a foto já está no Storage;
-        // o usuário pode recarregar para sincronizar.
+        console.error('Erro ao salvar photo_url no banco (urticaria_photos):', error)
+        alert('Erro ao salvar o registro da foto no banco de dados.')
       } else {
-        console.log('✅ photo_url salva com sucesso no banco de dados!')
+        console.log('✅ photo_url salva com sucesso no banco de dados (urticaria_photos)!')
       }
     } catch (e) {
       console.error('Erro inesperado ao salvar photo_url:', e)
@@ -286,7 +298,7 @@ export default function UAS7App() {
               userId={userId}
               selectedDate={todayDate}
               onPhotoSaved={handlePhotoSaved}
-              savedPhotoUrl={photoUrls[todayDate] ?? null}
+              savedPhotoUrls={photoUrls[todayDate] ?? []}
             />
           </div>
         </div>

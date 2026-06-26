@@ -10,15 +10,15 @@ interface PhotoCaptureProps {
   selectedDate: string
   /** Callback disparado após upload bem-sucedido: passa a URL pública e a data */
   onPhotoSaved: (publicUrl: string, date: string) => void
-  /** URL já salva no banco (para exibir miniatura ao carregar a página) */
-  savedPhotoUrl?: string | null
+  /** URLs já salvas no banco (para exibir miniaturas ao carregar a página) */
+  savedPhotoUrls?: string[]
 }
 
 export default function PhotoCapture({
   userId,
   selectedDate,
   onPhotoSaved,
-  savedPhotoUrl,
+  savedPhotoUrls = [],
 }: PhotoCaptureProps) {
   // --- STATE MANAGEMENT ---
   // stream: Guarda a referência do MediaStream da câmera para podermos parar a gravação depois (economia de hardware).
@@ -45,8 +45,8 @@ export default function PhotoCapture({
   // uploadError: Mensagem de erro caso o upload para o Storage falhe.
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  // confirmedPhotoUrl: URL pública confirmada após salvar no Storage (para miniatura persistente).
-  const [confirmedPhotoUrl, setConfirmedPhotoUrl] = useState<string | null>(savedPhotoUrl ?? null)
+  // confirmedPhotoUrls: URLs públicas confirmadas após salvar no Storage (para histórico).
+  const [confirmedPhotoUrls, setConfirmedPhotoUrls] = useState<string[]>(savedPhotoUrls)
 
   // --- REFS ---
   // Refs são fundamentais aqui para acessar os elementos DOM reais sem causar re-renders desnecessários.
@@ -60,10 +60,10 @@ export default function PhotoCapture({
   // Ref espelho de isMobile para uso dentro de closures e efeitos sem dependências
   const isMobileRef = useRef(isMobile)
 
-  // Sincroniza a miniatura quando a prop externa muda (ex: semana trocada no formulário)
+  // Sincroniza a lista de miniaturas quando a prop externa muda
   useEffect(() => {
-    setConfirmedPhotoUrl(savedPhotoUrl ?? null)
-  }, [savedPhotoUrl])
+    setConfirmedPhotoUrls(savedPhotoUrls)
+  }, [savedPhotoUrls])
 
   // Marca desmontagem para guards assíncronos
   useEffect(() => {
@@ -425,13 +425,13 @@ export default function PhotoCapture({
     try {
       const publicUrl = await uploadUrticariaPhoto(capturedImage, userId, selectedDate)
 
-      // Atualiza a miniatura local imediatamente (feedback visual instantâneo)
-      setConfirmedPhotoUrl(publicUrl)
+      // Adiciona a foto recém salva ao histórico de miniaturas local imediatamente
+      setConfirmedPhotoUrls(prev => [...prev, publicUrl])
 
-      // Notifica o componente pai para persistir a URL no banco via upsert
+      // Notifica o componente pai para persistir a URL no banco (tabela urticaria_photos)
       onPhotoSaved(publicUrl, selectedDate)
 
-      // Limpa a imagem capturada do estado local pois agora temos a URL pública confirmada
+      // Limpa a imagem capturada do estado local para permitir a próxima captura de forma fluida
       setCapturedImage(null)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido ao salvar a foto.'
@@ -512,30 +512,30 @@ export default function PhotoCapture({
       {/* ============================================= */}
       {/* MINIATURA CONFIRMADA — exibida quando a foto já foi salva no Storage */}
       {/* ============================================= */}
-      {confirmedPhotoUrl && !capturedImage && (
-        <div className="mb-4 rounded-lg overflow-hidden border-2 border-emerald-400 dark:border-emerald-600 relative group">
-          <img
-            src={confirmedPhotoUrl}
-            alt="Foto salva no diário de hoje"
-            className="w-full h-32 sm:h-40 object-cover"
-          />
-          {/* Badge de confirmação */}
-          <div className="absolute top-2 right-2 flex items-center gap-1 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
-            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-            Salvo no diário
+      {/* ============================================= */}
+      {/* MINIATURAS CONFIRMADAS / HISTÓRICO DE FOTOS DO DIA */}
+      {/* ============================================= */}
+      {confirmedPhotoUrls.length > 0 && !capturedImage && (
+        <div className="mb-4 space-y-2">
+          <label className="text-xs font-bold text-gray-700 dark:text-gray-300">
+            Fotos salvas hoje ({confirmedPhotoUrls.length})
+          </label>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-36 overflow-y-auto p-1.5 bg-zinc-50 dark:bg-zinc-800/40 rounded-lg border border-rose-100/50 dark:border-zinc-800 shadow-inner">
+            {confirmedPhotoUrls.map((url, idx) => (
+              <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-emerald-400 dark:border-emerald-600 group">
+                <img
+                  src={url}
+                  alt={`Foto salva ${idx + 1}`}
+                  className="w-full h-full object-cover transition-transform duration-200 hover:scale-105"
+                />
+                <div className="absolute top-1 right-1 bg-emerald-500 text-white p-0.5 rounded-full shadow-sm animate-scale-in">
+                  <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+            ))}
           </div>
-          {/* Botão para substituir a foto */}
-          <button
-            onClick={() => {
-              setConfirmedPhotoUrl(null)
-              triggerGallerySelector()
-            }}
-            className="absolute bottom-2 right-2 text-[10px] bg-black/60 hover:bg-black/80 text-white px-2 py-0.5 rounded-md font-medium transition-colors opacity-0 group-hover:opacity-100"
-          >
-            Trocar foto
-          </button>
         </div>
       )}
 
@@ -557,7 +557,7 @@ export default function PhotoCapture({
               />
             </div>
           ) : (
-            !confirmedPhotoUrl && (
+            confirmedPhotoUrls.length === 0 && (
               <div className="flex-1 min-h-[200px] bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700 flex flex-col items-center justify-center mb-4 gap-3">
                 <div className="w-16 h-16 rounded-full bg-wine-50 dark:bg-wine-950/40 flex items-center justify-center">
                   <svg className="w-8 h-8 text-wine-500 dark:text-wine-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

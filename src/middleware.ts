@@ -40,8 +40,8 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Regra 1: Se o usuário tentar acessar a raiz ('/') e NÃO estiver logado, redirecione para '/login'.
-  if (!user && request.nextUrl.pathname === '/') {
+  // Regra 1: Se o usuário tentar acessar qualquer rota protegida (como '/' ou '/galeria') e NÃO estiver logado, redirecione para '/login'.
+  if (!user && request.nextUrl.pathname !== '/login') {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)

@@ -9,6 +9,11 @@ import PhotoCapture from '@/components/PhotoCapture'
 
 export type DayScore = { urticaria: number; itch: number }
 
+export interface PhotoRecord {
+  id: string
+  url: string
+}
+
 const EMPTY_SCORES: DayScore[] = Array(7).fill({ urticaria: -1, itch: -1 })
 
 export default function UAS7App() {
@@ -42,10 +47,10 @@ export default function UAS7App() {
   })
 
   /**
-   * Mapa de data (YYYY-MM-DD) → Lista de URLs públicas das fotos salvas no Supabase Storage.
-   * Carregado junto com os scores ao buscar a semana; atualizado após cada upload.
+   * Mapa de data (YYYY-MM-DD) → Lista de registros de fotos salvas no Supabase.
+   * Carregado junto com os scores ao buscar a semana; atualizado após cada upload/deleção.
    */
-  const [photoUrls, setPhotoUrls] = useState<Record<string, string[]>>({})
+  const [photoUrls, setPhotoUrls] = useState<Record<string, PhotoRecord[]>>({})
 
   // Deriva o estado de scores correspondente à semana selecionada
   const scores = scoresData.week === startDate ? scoresData.scores : EMPTY_SCORES
@@ -85,7 +90,7 @@ export default function UAS7App() {
         // Busca todas as fotos salvas para o período da semana correspondente
         const { data: photosData, error: photosError } = await supabase
           .from('urticaria_photos')
-          .select('date, photo_url')
+          .select('id, date, photo_url')
           .eq('user_id', userId)
           .in('date', dates)
           .order('created_at', { ascending: true }) // Ordem cronológica das fotos do dia
@@ -93,7 +98,7 @@ export default function UAS7App() {
         if (photosError) throw photosError
 
         const newScores = Array(7).fill(null).map(() => ({ urticaria: -1, itch: -1 }))
-        const newPhotoUrls: Record<string, string[]> = {}
+        const newPhotoUrls: Record<string, PhotoRecord[]> = {}
 
         if (entriesData) {
           entriesData.forEach(entry => {
@@ -112,7 +117,7 @@ export default function UAS7App() {
             if (!newPhotoUrls[photo.date]) {
               newPhotoUrls[photo.date] = []
             }
-            newPhotoUrls[photo.date].push(photo.photo_url)
+            newPhotoUrls[photo.date].push({ id: photo.id, url: photo.photo_url })
           })
         }
         
@@ -219,41 +224,59 @@ export default function UAS7App() {
 
   /**
    * Callback disparado pelo PhotoCapture após upload bem-sucedido.
-   * Persiste a `photo_url` na tabela `urticaria_photos` via insert e atualiza o state local.
+   * Persiste a `photo_url` na tabela `urticaria_photos` via insert, atualiza o state local e retorna o ID gerado.
    *
    * @param publicUrl  - URL pública retornada pelo Supabase Storage
    * @param date       - Data no formato YYYY-MM-DD associada à foto
+   * @returns          - ID do registro criado ou null em caso de erro
    */
-  const handlePhotoSaved = useCallback(async (publicUrl: string, date: string) => {
-    if (!userId) return
-
-    // Atualiza o state local imediatamente para feedback visual instantâneo
-    setPhotoUrls(prev => {
-      const currentList = prev[date] ?? []
-      return { ...prev, [date]: [...currentList, publicUrl] }
-    })
+  const handlePhotoSaved = useCallback(async (publicUrl: string, date: string): Promise<string | null> => {
+    if (!userId) return null
 
     try {
       console.log('📸 Salvando photo_url no banco (urticaria_photos):', { date, publicUrl })
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('urticaria_photos')
         .insert({
           user_id: userId,
           date,
           photo_url: publicUrl,
         })
+        .select('id')
+        .single()
 
       if (error) {
         console.error('Erro ao salvar photo_url no banco (urticaria_photos):', error)
         alert('Erro ao salvar o registro da foto no banco de dados.')
-      } else {
+        return null
+      } else if (data) {
         console.log('✅ photo_url salva com sucesso no banco de dados (urticaria_photos)!')
+        const newId = data.id
+        setPhotoUrls(prev => {
+          const currentList = prev[date] ?? []
+          if (currentList.some(item => item.id === newId)) return prev
+          return { ...prev, [date]: [...currentList, { id: newId, url: publicUrl }] }
+        })
+        return newId
       }
+      return null
     } catch (e) {
       console.error('Erro inesperado ao salvar photo_url:', e)
+      return null
     }
   }, [userId])
+
+  /**
+   * Callback disparado pelo PhotoCapture após deleção bem-sucedida.
+   * Remove a foto do state local para atualização instantânea na interface.
+   */
+  const handlePhotoDeleted = useCallback((photoId: string, date: string) => {
+    setPhotoUrls(prev => {
+      const currentList = prev[date] ?? []
+      return { ...prev, [date]: currentList.filter(p => p.id !== photoId) }
+    })
+  }, [])
 
   // Data de hoje no formato YYYY-MM-DD (usada pelo PhotoCapture para associar a foto)
   const todayDate = new Date().toISOString().split('T')[0]
@@ -298,7 +321,8 @@ export default function UAS7App() {
               userId={userId}
               selectedDate={todayDate}
               onPhotoSaved={handlePhotoSaved}
-              savedPhotoUrls={photoUrls[todayDate] ?? []}
+              onPhotoDeleted={handlePhotoDeleted}
+              savedPhotos={photoUrls[todayDate] ?? []}
             />
           </div>
         </div>

@@ -62,6 +62,47 @@ export default function GaleriaPage() {
   const [error, setError] = useState<string | null>(null)
   const [dark, setDark] = useState(false)
 
+  const handleDeletePhoto = async (photoId: string, photoUrl: string) => {
+    const confirmed = window.confirm('Tem certeza que deseja excluir esta foto permanentemente?')
+    if (!confirmed) return
+
+    try {
+      const marker = '/urticaria-photos/'
+      const index = photoUrl.indexOf(marker)
+      if (index === -1) {
+        throw new Error('URL da foto inválida ou fora do bucket esperado.')
+      }
+      const filePath = decodeURIComponent(photoUrl.substring(index + marker.length))
+
+      // 1. Remove o arquivo do Supabase Storage
+      const { error: storageError } = await supabase.storage
+        .from('urticaria-photos')
+        .remove([filePath])
+
+      if (storageError) {
+        throw storageError
+      }
+
+      // 2. Remove o registro do Banco de Dados
+      const { error: dbError } = await supabase
+        .from('urticaria_photos')
+        .delete()
+        .eq('id', photoId)
+
+      if (dbError) {
+        throw dbError
+      }
+
+      // 3. Atualiza UI local
+      setEntries(prev => prev.filter(entry => entry.id !== photoId))
+
+      alert('Foto excluída com sucesso!')
+    } catch (err: any) {
+      console.error('Erro ao excluir foto:', err)
+      alert(`Erro ao excluir foto: ${err.message || 'Erro desconhecido'}`)
+    }
+  }
+
   // Sincroniza o estado de Dark Mode com o tema ativo na tag html
   useEffect(() => {
     const isDark = document.documentElement.classList.contains('dark')
@@ -271,6 +312,16 @@ export default function GaleriaPage() {
                     className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                     loading="lazy"
                   />
+                  {/* Botão de Excluir */}
+                  <button
+                    onClick={() => handleDeletePhoto(entry.id, entry.photo_url)}
+                    title="Excluir foto"
+                    className="absolute top-2.5 right-2.5 bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full shadow-lg transition-all duration-150 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
 
                 {/* Data formatada e scores UAS7 logo abaixo da imagem */}

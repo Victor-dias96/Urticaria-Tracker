@@ -1,24 +1,32 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { uploadUrticariaPhoto } from '@/lib/storageService'
+import { supabase } from '@/lib/supabase'
 
-// --- TYPES ---
+interface PhotoRecord {
+  id: string
+  url: string
+}
+
 interface PhotoCaptureProps {
   /** ID do usuário autenticado — necessário para montar o path no Storage */
   userId: string | null
   /** Data do registro no formato YYYY-MM-DD (sempre hoje, decisão do produto) */
   selectedDate: string
-  /** Callback disparado após upload bem-sucedido: passa a URL pública e a data */
-  onPhotoSaved: (publicUrl: string, date: string) => void
-  /** URLs já salvas no banco (para exibir miniaturas ao carregar a página) */
-  savedPhotoUrls?: string[]
+  /** Callback disparado após upload bem-sucedido: passa a URL pública e a data, e retorna o ID gerado */
+  onPhotoSaved: (publicUrl: string, date: string) => Promise<string | null>
+  /** Callback opcional disparado ao excluir uma foto */
+  onPhotoDeleted?: (photoId: string, date: string) => void
+  /** Registros de fotos já salvas no banco para essa data (para exibir miniaturas) */
+  savedPhotos?: PhotoRecord[]
 }
 
 export default function PhotoCapture({
   userId,
   selectedDate,
   onPhotoSaved,
-  savedPhotoUrls = [],
+  onPhotoDeleted,
+  savedPhotos = [],
 }: PhotoCaptureProps) {
   // --- STATE MANAGEMENT ---
   // stream: Guarda a referência do MediaStream da câmera para podermos parar a gravação depois (economia de hardware).
@@ -45,8 +53,8 @@ export default function PhotoCapture({
   // uploadError: Mensagem de erro caso o upload para o Storage falhe.
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  // confirmedPhotoUrls: URLs públicas confirmadas após salvar no Storage (para histórico).
-  const [confirmedPhotoUrls, setConfirmedPhotoUrls] = useState<string[]>(savedPhotoUrls)
+  // confirmedPhotos: registros de fotos confirmadas após salvar no Storage (para histórico).
+  const [confirmedPhotos, setConfirmedPhotos] = useState<PhotoRecord[]>(savedPhotos)
 
   // --- REFS ---
   // Refs são fundamentais aqui para acessar os elementos DOM reais sem causar re-renders desnecessários.
@@ -62,8 +70,8 @@ export default function PhotoCapture({
 
   // Sincroniza a lista de miniaturas quando a prop externa muda
   useEffect(() => {
-    setConfirmedPhotoUrls(savedPhotoUrls)
-  }, [savedPhotoUrls])
+    setConfirmedPhotos(savedPhotos)
+  }, [savedPhotos])
 
   // Marca desmontagem para guards assíncronos
   useEffect(() => {
@@ -326,29 +334,20 @@ export default function PhotoCapture({
     const dataUrl = canvas.toDataURL('image/png')
     setCapturedImage(dataUrl)
     setUploadError(null)
-
-    // CORREÇÃO DO BUG: Desliga IMEDIATAMENTE o stream da webcam após captura.
-    // Isso impede o congelamento porque liberamos o hardware da câmera.
-    stopCamera()
   }
 
-  // Botão "Tirar outra foto": limpa completamente o estado anterior e reinicia a câmera do zero
+  // Botão "Tirar outra foto": limpa o estado da imagem capturada e garante que a câmera está ligada
   const handleRetake = () => {
-    // 1. Para todos os tracks do stream anterior (se ainda existirem)
-    stopCamera()
-
-    // 2. Redefine o estado da imagem capturada
+    // Redefine o estado da imagem capturada
     setCapturedImage(null)
     setTimestamp(getFormattedDateTime())
     setUploadError(null)
 
-    // 3. Chama getUserMedia novamente após o React processar o estado limpo.
-    // O setTimeout garante que isCapturing=false foi processado antes de reiniciarmos.
-    setTimeout(() => {
-      if (isMountedRef.current) {
-        startCamera()
-      }
-    }, 150)
+    // Se por algum motivo o stream foi parado, inicia de novo.
+    // Caso contrário, o stream mantido em segundo plano continua transmitindo instantaneamente.
+    if (!streamRef.current) {
+      startCamera()
+    }
   }
 
   // --- 3. INTEGRAÇÃO COM GALERIA ---
@@ -425,11 +424,13 @@ export default function PhotoCapture({
     try {
       const publicUrl = await uploadUrticariaPhoto(capturedImage, userId, selectedDate)
 
-      // Adiciona a foto recém salva ao histórico de miniaturas local imediatamente
-      setConfirmedPhotoUrls(prev => [...prev, publicUrl])
+      // Notifica o componente pai para persistir a URL no banco e aguarda o ID do registro
+      const insertedId = await onPhotoSaved(publicUrl, selectedDate)
 
-      // Notifica o componente pai para persistir a URL no banco (tabela urticaria_photos)
-      onPhotoSaved(publicUrl, selectedDate)
+      if (insertedId) {
+        // Adiciona a foto recém salva ao histórico de miniaturas local imediatamente
+        setConfirmedPhotos(prev => [...prev, { id: insertedId, url: publicUrl }])
+      }
 
       // Limpa a imagem capturada do estado local para permitir a próxima captura de forma fluida
       setCapturedImage(null)
@@ -439,6 +440,52 @@ export default function PhotoCapture({
       setUploadError(message)
     } finally {
       setIsUploading(false)
+    }
+  }
+
+  const handleDeletePhoto = async (photoId: string, photoUrl: string) => {
+    const confirmed = window.confirm('Tem certeza que deseja excluir esta foto permanentemente?')
+    if (!confirmed) return
+
+    try {
+      const marker = '/urticaria-photos/'
+      const index = photoUrl.indexOf(marker)
+      if (index === -1) {
+        throw new Error('URL da foto inválida ou fora do bucket esperado.')
+      }
+      const filePath = decodeURIComponent(photoUrl.substring(index + marker.length))
+
+      // 1. Remove o arquivo do Supabase Storage
+      const { error: storageError } = await supabase.storage
+        .from('urticaria-photos')
+        .remove([filePath])
+
+      if (storageError) {
+        throw storageError
+      }
+
+      // 2. Remove o registro do Banco de Dados
+      const { error: dbError } = await supabase
+        .from('urticaria_photos')
+        .delete()
+        .eq('id', photoId)
+
+      if (dbError) {
+        throw dbError
+      }
+
+      // 3. Atualiza UI local
+      setConfirmedPhotos(prev => prev.filter(p => p.id !== photoId))
+
+      // 4. Notifica o componente pai
+      if (onPhotoDeleted) {
+        onPhotoDeleted(photoId, selectedDate)
+      }
+
+      alert('Foto excluída com sucesso!')
+    } catch (err: any) {
+      console.error('Erro ao excluir foto:', err)
+      alert(`Erro ao excluir foto: ${err.message || 'Erro desconhecido'}`)
     }
   }
 
@@ -515,24 +562,37 @@ export default function PhotoCapture({
       {/* ============================================= */}
       {/* MINIATURAS CONFIRMADAS / HISTÓRICO DE FOTOS DO DIA */}
       {/* ============================================= */}
-      {confirmedPhotoUrls.length > 0 && !capturedImage && (
+      {confirmedPhotos.length > 0 && !capturedImage && (
         <div className="mb-4 space-y-2">
           <label className="text-xs font-bold text-gray-700 dark:text-gray-300">
-            Fotos salvas hoje ({confirmedPhotoUrls.length})
+            Fotos salvas hoje ({confirmedPhotos.length})
           </label>
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-36 overflow-y-auto p-1.5 bg-zinc-50 dark:bg-zinc-800/40 rounded-lg border border-rose-100/50 dark:border-zinc-800 shadow-inner">
-            {confirmedPhotoUrls.map((url, idx) => (
-              <div key={idx} className="relative aspect-square rounded-lg overflow-hidden border border-emerald-400 dark:border-emerald-600 group">
+            {confirmedPhotos.map((photo, idx) => (
+              <div key={photo.id} className="relative aspect-square rounded-lg overflow-hidden border border-emerald-400 dark:border-emerald-600 group">
                 <img
-                  src={url}
+                  src={photo.url}
                   alt={`Foto salva ${idx + 1}`}
                   className="w-full h-full object-cover transition-transform duration-200 hover:scale-105"
                 />
-                <div className="absolute top-1 right-1 bg-emerald-500 text-white p-0.5 rounded-full shadow-sm animate-scale-in">
+                
+                {/* Ícone de confirmação */}
+                <div className="absolute top-1 left-1 bg-emerald-500 text-white p-0.5 rounded-full shadow-sm animate-scale-in">
                   <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
+
+                {/* Botão de Excluir */}
+                <button
+                  onClick={() => handleDeletePhoto(photo.id, photo.url)}
+                  title="Excluir foto"
+                  className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white p-1 rounded-full shadow-md transition-all duration-150 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
               </div>
             ))}
           </div>
@@ -557,7 +617,7 @@ export default function PhotoCapture({
               />
             </div>
           ) : (
-            confirmedPhotoUrls.length === 0 && (
+            confirmedPhotos.length === 0 && (
               <div className="flex-1 min-h-[200px] bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700 flex flex-col items-center justify-center mb-4 gap-3">
                 <div className="w-16 h-16 rounded-full bg-wine-50 dark:bg-wine-950/40 flex items-center justify-center">
                   <svg className="w-8 h-8 text-wine-500 dark:text-wine-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

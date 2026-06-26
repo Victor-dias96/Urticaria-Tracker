@@ -41,6 +41,12 @@ export default function UAS7App() {
     scores: EMPTY_SCORES
   })
 
+  /**
+   * Mapa de data (YYYY-MM-DD) → URL pública da foto salva no Supabase Storage.
+   * Carregado junto com os scores ao buscar a semana; atualizado após cada upload.
+   */
+  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({})
+
   // Deriva o estado de scores correspondente à semana selecionada
   const scores = scoresData.week === startDate ? scoresData.scores : EMPTY_SCORES
 
@@ -60,7 +66,7 @@ export default function UAS7App() {
     setWeekDays(days)
   }, [startDate])
 
-  // Fetch scores from Supabase
+  // Fetch scores (and photo_url) from Supabase
   useEffect(() => {
     if (!startDate || !userId || weekDays.length === 0) return
 
@@ -69,13 +75,15 @@ export default function UAS7App() {
       try {
         const { data, error } = await supabase
           .from('uas7_entries')
-          .select('date, urticaria_score, coceira_score')
+          // Inclui photo_url no SELECT para carregar miniaturas salvas anteriormente
+          .select('date, urticaria_score, coceira_score, photo_url')
           .eq('user_id', userId)
           .in('date', dates)
 
         if (error) throw error
 
         const newScores = Array(7).fill(null).map(() => ({ urticaria: -1, itch: -1 }))
+        const newPhotoUrls: Record<string, string> = {}
 
         if (data) {
           data.forEach(entry => {
@@ -86,10 +94,15 @@ export default function UAS7App() {
                 itch: entry.coceira_score ?? -1 
               }
             }
+            // Mapeia a URL da foto para a data correspondente (se existir)
+            if (entry.photo_url) {
+              newPhotoUrls[entry.date] = entry.photo_url
+            }
           })
         }
         
         setScoresData({ week: startDate, scores: newScores })
+        setPhotoUrls(newPhotoUrls)
       } catch (error) {
         console.error('Erro ao buscar histórico:', error)
       }
@@ -189,6 +202,50 @@ export default function UAS7App() {
     }
   }
 
+  /**
+   * Callback disparado pelo PhotoCapture após upload bem-sucedido.
+   * Persiste a `photo_url` no registro do banco de dados via upsert e atualiza o state local.
+   *
+   * @param publicUrl  - URL pública retornada pelo Supabase Storage
+   * @param date       - Data no formato YYYY-MM-DD associada à foto (sempre hoje, decisão do produto)
+   */
+  const handlePhotoSaved = useCallback(async (publicUrl: string, date: string) => {
+    if (!userId) return
+
+    // Atualiza o state local imediatamente para feedback visual instantâneo
+    setPhotoUrls(prev => ({ ...prev, [date]: publicUrl }))
+
+    try {
+      console.log('📸 Salvando photo_url no banco:', { date, publicUrl })
+
+      // Upsert: se já existir entrada para esse user+date, atualiza apenas photo_url;
+      // caso contrário, cria a linha com a URL (scores ficam null até o usuário preencher).
+      const { error } = await supabase
+        .from('uas7_entries')
+        .upsert(
+          {
+            user_id: userId,
+            date,
+            photo_url: publicUrl,
+          },
+          { onConflict: 'user_id, date' }
+        )
+
+      if (error) {
+        console.error('Erro ao salvar photo_url no banco:', error)
+        // Não reverte o state local pois a foto já está no Storage;
+        // o usuário pode recarregar para sincronizar.
+      } else {
+        console.log('✅ photo_url salva com sucesso no banco de dados!')
+      }
+    } catch (e) {
+      console.error('Erro inesperado ao salvar photo_url:', e)
+    }
+  }, [userId])
+
+  // Data de hoje no formato YYYY-MM-DD (usada pelo PhotoCapture para associar a foto)
+  const todayDate = new Date().toISOString().split('T')[0]
+
   const filledDays = scores.filter(s => s.urticaria !== -1 && s.itch !== -1).length
 
   const uas7Total = scores.reduce((sum, s) => {
@@ -225,7 +282,12 @@ export default function UAS7App() {
           </div>
           {/* Right column */}
           <div className="flex-1">
-            <PhotoCapture />
+            <PhotoCapture
+              userId={userId}
+              selectedDate={todayDate}
+              onPhotoSaved={handlePhotoSaved}
+              savedPhotoUrl={photoUrls[todayDate] ?? null}
+            />
           </div>
         </div>
       </main>

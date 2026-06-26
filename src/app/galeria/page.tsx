@@ -62,10 +62,10 @@ export default function GaleriaPage() {
   const [error, setError] = useState<string | null>(null)
   const [dark, setDark] = useState(false)
 
-  const handleDeletePhoto = async (photoId: string, photoUrl: string) => {
-    const confirmed = window.confirm('Tem certeza que deseja excluir esta foto permanentemente?')
-    if (!confirmed) return
+  // Estado para controlar o Pop-up de Exclusão
+  const [photoToDelete, setPhotoToDelete] = useState<UrticariaPhotoEntry | null>(null)
 
+  const handleDeletePhoto = async (photoId: string, photoUrl: string) => {
     try {
       const marker = '/urticaria-photos/'
       const index = photoUrl.indexOf(marker)
@@ -93,10 +93,9 @@ export default function GaleriaPage() {
         throw dbError
       }
 
-      // 3. Atualiza UI local
+      // 3. Atualiza UI local (A foto some da tela instantaneamente)
       setEntries(prev => prev.filter(entry => entry.id !== photoId))
 
-      alert('Foto excluída com sucesso!')
     } catch (err: any) {
       console.error('Erro ao excluir foto:', err)
       alert(`Erro ao excluir foto: ${err.message || 'Erro desconhecido'}`)
@@ -312,9 +311,9 @@ export default function GaleriaPage() {
                     className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                     loading="lazy"
                   />
-                  {/* Botão de Excluir */}
+                  {/* Botão de Excluir que abre o Modal */}
                   <button
-                    onClick={() => handleDeletePhoto(entry.id, entry.photo_url)}
+                    onClick={() => setPhotoToDelete(entry)}
                     title="Excluir foto"
                     className="absolute top-2.5 right-2.5 bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full shadow-lg transition-all duration-150 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10"
                   >
@@ -355,6 +354,53 @@ export default function GaleriaPage() {
           </div>
         )}
       </main>
+
+      {/* POP-UP CUSTOMIZADO DE CONFIRMAÇÃO */}
+      {photoToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity duration-300">
+          <div className="w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800 overflow-hidden transform transition-all scale-100 p-6">
+
+            {/* Ícone de Alerta Superior */}
+            <div className="mx-auto sm:mx-0 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 dark:bg-red-900/30 mb-4">
+              <svg className="h-6 w-6 text-red-600 dark:text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+              </svg>
+            </div>
+
+            {/* Textos Informativos */}
+            <div className="text-center sm:text-left">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">
+                Confirmar Exclusão?
+              </h3>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 leading-relaxed">
+                Deseja mesmo excluir esta foto do seu diário? Esta ação é permanente e não poderá ser desfeita.
+              </p>
+            </div>
+
+            {/* Botões de Ação Responsivos */}
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setPhotoToDelete(null)}
+                className="w-full sm:w-auto px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 active:bg-gray-300 rounded-xl transition-colors duration-200"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await handleDeletePhoto(photoToDelete.id, photoToDelete.photo_url);
+                  setPhotoToDelete(null);
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-xl shadow-sm shadow-red-100 dark:shadow-none transition-colors duration-200"
+              >
+                Sim, Excluir
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -19,35 +19,23 @@ const EMPTY_SCORES: DayScore[] = Array(7).fill({ urticaria: -1, itch: -1 })
 export default function UAS7App() {
   const [dark, setDark] = useState(false)
 
-  // Assim que a página carregar, ele verifica se o usuário já tinha escolhido o dark mode antes
+  // Sincroniza o estado do React com o que o layout.tsx já definiu no HTML
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme')
-
-    // Se estava salvo como dark, ou se o celular da pessoa já é dark mode por padrão
-    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      setDark(true)
-      document.documentElement.classList.add('dark')
-    } else {
-      setDark(false)
-      document.documentElement.classList.remove('dark')
-    }
+    const isDark = document.documentElement.classList.contains('dark')
+    setDark(isDark)
   }, [])
 
-  // Nova função para alternar e salvar a preferência no navegador
+  // Função para alternar o tema salvando no localStorage e aplicando na raiz
   const toggleDarkMode = () => {
-    setDark((prevDark) => {
-      const isNowDark = !prevDark
-
-      if (isNowDark) {
-        document.documentElement.classList.add('dark')
-        localStorage.setItem('theme', 'dark')
-      } else {
-        document.documentElement.classList.remove('dark')
-        localStorage.setItem('theme', 'light')
-      }
-
-      return isNowDark
-    })
+    const nextDark = !dark
+    setDark(nextDark)
+    if (nextDark) {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+      localStorage.setItem('theme', 'light')
+    }
   }
 
   // Dynamic Start Date (defaults to today)
@@ -244,17 +232,11 @@ export default function UAS7App() {
     } catch (e) {
       console.error('Erro ao salvar no banco:', e);
       alert('Houve um erro ao salvar sua nota. Tente novamente.');
-      // Revertendo o estado em caso de erro (opcional, aqui mantemos simples e só damos o alert)
     }
   }
 
   /**
    * Callback disparado pelo PhotoCapture após upload bem-sucedido.
-   * Persiste a `photo_url` na tabela `urticaria_photos` via insert, atualiza o state local e retorna o ID gerado.
-   *
-   * @param publicUrl  - URL pública retornada pelo Supabase Storage
-   * @param date       - Data no formato YYYY-MM-DD associada à foto
-   * @returns          - ID do registro criado ou null em caso de erro
    */
   const handlePhotoSaved = useCallback(async (publicUrl: string, date: string): Promise<string | null> => {
     if (!userId) return null
@@ -295,7 +277,6 @@ export default function UAS7App() {
 
   /**
    * Callback disparado pelo PhotoCapture após deleção bem-sucedida.
-   * Remove a foto do state local para atualização instantânea na interface.
    */
   const handlePhotoDeleted = useCallback((photoId: string, date: string) => {
     setPhotoUrls(prev => {
@@ -304,7 +285,7 @@ export default function UAS7App() {
     })
   }, [])
 
-  // Data de hoje no formato YYYY-MM-DD (usada pelo PhotoCapture para associar a foto)
+  // Data de hoje no formato YYYY-MM-DD
   const todayDate = new Date().toISOString().split('T')[0]
 
   const filledDays = scores.filter(s => s.urticaria !== -1 && s.itch !== -1).length

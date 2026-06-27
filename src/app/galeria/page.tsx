@@ -36,331 +36,402 @@ const getSeverityText = (score: number | null) => {
   if (score === 0) return 'Nenhuma'
   if (score === 1) return 'Leve'
   if (score === 2) return 'Moderada'
-  if (score === 3) return 'Intensa'
-  return ''
+  if (score === 3) return 'Grave'
+  return 'Não preenchido'
 }
 
-const getSeverityColor = (score: number | null) => {
-  if (score === null || score === -1) {
-    return 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700'
-  }
-  if (score === 0) {
-    return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900/50'
-  }
-  if (score === 1) {
-    return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900/50'
-  }
-  if (score === 2) {
-    return 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-900/50'
-  }
-  return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-900/50'
+const getSeverityStyles = (score: number | null) => {
+  if (score === null || score === -1) return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+  if (score === 0) return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/30'
+  if (score === 1) return 'bg-wine-50 text-wine-700 dark:bg-wine-950/40 dark:text-wine-300 border border-wine-100 dark:border-wine-900/30'
+  if (score === 2) return 'bg-wine-100 text-wine-800 dark:bg-wine-900/40 dark:text-wine-200 border border-wine-200 dark:border-wine-800/40'
+  return 'bg-wine-800 text-white dark:bg-wine-900 dark:text-wine-100'
 }
 
 export default function GaleriaPage() {
-  const [entries, setEntries] = useState<UrticariaPhotoEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [dark, setDark] = useState(false)
+  const [photos, setPhotos] = useState<UrticariaPhotoEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userId, setUserId] = useState<string | null>(null)
 
-  // Estado para controlar o Pop-up de Exclusão
+  // Estado para controlar qual foto está expandida em tela cheia (Modal)
+  const [selectedPhoto, setSelectedPhoto] = useState<UrticariaPhotoEntry | null>(null)
+  // Estado para controlar a confirmação de exclusão
   const [photoToDelete, setPhotoToDelete] = useState<UrticariaPhotoEntry | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const handleDeletePhoto = async (photoId: string, photoUrl: string) => {
-    try {
-      const marker = '/urticaria-photos/'
-      const index = photoUrl.indexOf(marker)
-      if (index === -1) {
-        throw new Error('URL da foto inválida ou fora do bucket esperado.')
-      }
-      const filePath = decodeURIComponent(photoUrl.substring(index + marker.length))
-
-      // 1. Remove o arquivo do Supabase Storage
-      const { error: storageError } = await supabase.storage
-        .from('urticaria-photos')
-        .remove([filePath])
-
-      if (storageError) {
-        throw storageError
-      }
-
-      // 2. Remove o registro do Banco de Dados
-      const { error: dbError } = await supabase
-        .from('urticaria_photos')
-        .delete()
-        .eq('id', photoId)
-
-      if (dbError) {
-        throw dbError
-      }
-
-      // 3. Atualiza UI local (A foto some da tela instantaneamente)
-      setEntries(prev => prev.filter(entry => entry.id !== photoId))
-
-    } catch (err: any) {
-      console.error('Erro ao excluir foto:', err)
-      alert(`Erro ao excluir foto: ${err.message || 'Erro desconhecido'}`)
-    }
-  }
-
-  // Sincroniza o estado de Dark Mode com o tema ativo na tag html
+  // Sincroniza o estado do React com o que o layout.tsx já definiu no HTML
   useEffect(() => {
     const isDark = document.documentElement.classList.contains('dark')
     setDark(isDark)
   }, [])
 
-  useEffect(() => {
-    const root = document.documentElement
-    if (dark) {
-      root.classList.add('dark')
+  // Função para alternar o tema salvando no localStorage e aplicando na raiz
+  const toggleDarkMode = () => {
+    const nextDark = !dark
+    setDark(nextDark)
+    if (nextDark) {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
     } else {
-      root.classList.remove('dark')
+      document.documentElement.classList.remove('dark')
+      localStorage.setItem('theme', 'light')
     }
-  }, [dark])
+  }
 
+  // 1. Obter usuário autenticado
   useEffect(() => {
-    const fetchPhotos = async () => {
+    const fetchUser = async () => {
+      const { data } = await supabase.auth.getUser()
+      if (data?.user?.id) {
+        setUserId(data.user.id)
+      } else {
+        setLoading(false)
+      }
+    }
+    fetchUser()
+  }, [])
+
+  // 2. Buscar fotos e fazer o Join manual com os sintomas mapeados pelo diário
+  useEffect(() => {
+    if (!userId) return
+
+    const fetchPhotosAndScores = async () => {
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser()
-        if (authError) throw authError
+        setLoading(true)
 
-        if (!user) {
-          setError('Usuário não autenticado.')
-          setLoading(false)
-          return
-        }
-
-        // 1. Busca todas as fotos da tabela urticaria_photos ordenando por criadas mais recentemente
-        const { data: photos, error: dbError } = await supabase
+        // Puxa as fotos ordenadas pela data decrescente (mais recentes primeiro)
+        const { data: photosData, error: photosError } = await supabase
           .from('urticaria_photos')
-          .select('id, user_id, date, photo_url, created_at')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
+          .select('id, user_id, date, photo_url')
+          .eq('user_id', userId)
+          .order('date', { ascending: false })
 
-        if (dbError) throw dbError
+        if (photosError) throw photosError
 
-        if (!photos || photos.length === 0) {
-          setEntries([])
-          setLoading(false)
+        if (!photosData || photosData.length === 0) {
+          setPhotos([])
           return
         }
 
-        // 2. Extrai as datas únicas das fotos para buscar as notas correspondentes do diário em lote
-        const uniqueDates = Array.from(new Set(photos.map(p => p.date)))
+        // Mapeia todas as datas únicas que contêm fotos para fazer um lote de consulta reduzido
+        const dates = Array.from(new Set(photosData.map(p => p.date)))
 
-        const { data: diaryEntries, error: diaryError } = await supabase
+        // Puxa as notas de diário existentes para as datas em questão
+        const { data: entriesData, error: entriesError } = await supabase
           .from('uas7_entries')
           .select('date, urticaria_score, coceira_score')
-          .eq('user_id', user.id)
-          .in('date', uniqueDates)
+          .eq('user_id', userId)
+          .in('date', dates)
 
-        if (diaryError) throw diaryError
+        if (entriesError) throw entriesError
 
-        // Mapeia os diários por data para pesquisa rápida O(1)
-        const diaryMap = new Map<string, { urticaria_score: number | null; coceira_score: number | null }>()
-        if (diaryEntries) {
-          diaryEntries.forEach(entry => {
-            diaryMap.set(entry.date, {
-              urticaria_score: entry.urticaria_score,
-              coceira_score: entry.coceira_score
-            })
+        // Transforma a resposta do diário num dicionário para busca rápida O(1)
+        const entriesMap: Record<string, { urticaria: number | null; coceira: number | null }> = {}
+        if (entriesData) {
+          entriesData.forEach(entry => {
+            entriesMap[entry.date] = {
+              urticaria: entry.urticaria_score,
+              coceira: entry.coceira_score
+            }
           })
         }
 
-        // 3. Junta as fotos com os sintomas (badges) obtidos do diário
-        const mergedEntries: UrticariaPhotoEntry[] = photos.map(photo => {
-          const diary = diaryMap.get(photo.date)
+        // Consolida os dois arrays aplicando o mapeamento
+        const consolidatedData: UrticariaPhotoEntry[] = photosData.map(photo => {
+          const matchedEntry = entriesMap[photo.date]
           return {
-            id: photo.id,
-            user_id: photo.user_id,
-            date: photo.date,
-            photo_url: photo.photo_url,
-            urticaria_score: diary ? diary.urticaria_score : null,
-            coceira_score: diary ? diary.coceira_score : null
+            ...photo,
+            urticaria_score: matchedEntry ? matchedEntry.urticaria : null,
+            coceira_score: matchedEntry ? matchedEntry.coceira : null
           }
         })
 
-        setEntries(mergedEntries)
-      } catch (err: any) {
-        console.error('Erro ao carregar galeria:', err)
-        setError('Não foi possível carregar a galeria de fotos.')
+        setPhotos(consolidatedData)
+      } catch (err) {
+        console.error('Erro ao carregar galeria de fotos:', err)
       } finally {
         setLoading(false)
       }
     }
 
-    fetchPhotos()
-  }, [])
+    fetchPhotosAndScores()
+  }, [userId])
+
+  // Função para deletar a foto do storage e do banco de dados
+  const handleDeletePhoto = async (photoId: string, photoUrl: string) => {
+    try {
+      setDeletingId(photoId)
+
+      // Extrai o caminho relativo correto do arquivo dentro do bucket a partir da URL pública
+      // Exemplo: .../storage/v1/object/public/urticaria-photos/pasta-usuario/nome-arquivo.jpg
+      const urlParts = photoUrl.split('/urticaria-photos/')
+      if (urlParts.length < 2) throw new Error('URL da foto inválida para exclusão no Storage.')
+      const storagePath = urlParts[1]
+
+      // 1. Deleta o arquivo no Bucket do Supabase Storage
+      const { error: storageError } = await supabase.storage
+        .from('urticaria-photos')
+        .remove([storagePath])
+
+      if (storageError) {
+        console.error('Aviso/Erro ao deletar no Storage:', storageError)
+        // Seguimos adiante para limpar do banco caso o arquivo físico já tenha sumido por algum motivo
+      }
+
+      // 2. Deleta o registro na tabela do banco de dados (urticaria_photos)
+      const { error: dbError } = await supabase
+        .from('urticaria_photos')
+        .delete()
+        .eq('id', photoId)
+
+      if (dbError) throw dbError
+
+      // 3. Atualiza o estado local da UI removendo a foto sem precisar recarregar tudo
+      setPhotos(prev => prev.filter(p => p.id !== photoId))
+
+      // Se a foto deletada estivesse aberta em tela cheia, fecha ela
+      if (selectedPhoto?.id === photoId) {
+        setSelectedPhoto(null)
+      }
+    } catch (e) {
+      console.error('Erro ao excluir foto:', e)
+      alert('Não foi possível excluir a foto. Tente novamente.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-rose-50 dark:bg-gray-950 text-gray-800 dark:text-gray-100 transition-colors duration-300">
-      {/* Header Simplificado da Galeria */}
-      <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-rose-100 dark:border-gray-800 shadow-sm transition-colors duration-300">
-        <div className="max-w-5xl mx-auto px-4 h-14 sm:h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h1 className="text-base sm:text-lg font-bold text-wine-700 dark:text-wine-300">
-              Galeria de Crises
-            </h1>
-          </div>
 
-          <div className="flex items-center gap-3">
-            {/* Toggle dark mode */}
+      {/* HEADER MINI/SIMPLIFICADO PARA A TELA DE GALERIA */}
+      <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-rose-100 dark:border-gray-800 shadow-sm transition-colors duration-300">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+
+          {/* Logo / Link para voltar */}
+          <Link href="/" className="flex items-center gap-2 group">
+            <svg className="w-5 h-5 text-wine-600 dark:text-wine-400 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span className="font-bold text-base sm:text-lg text-slate-900 dark:text-white tracking-tight">
+              Galeria de Crises
+            </span>
+          </Link>
+
+          {/* Botões do Topo */}
+          <div className="flex items-center gap-2">
+            {/* Botão de Dark Mode */}
             <button
-              onClick={() => setDark(d => !d)}
+              onClick={toggleDarkMode}
               aria-label="Alternar tema claro/escuro"
-              className="w-9 h-9 rounded-full flex items-center justify-center bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-all duration-200 hover:scale-105"
+              className="w-9 h-9 rounded-lg flex items-center justify-center bg-gray-50 dark:bg-gray-800 border border-rose-100 dark:border-gray-700/60 text-gray-600 dark:text-gray-300 hover:bg-rose-100/50 dark:hover:bg-gray-700 transition-colors"
             >
               {dark ? (
-                <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+                <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 14.536a1 1 0 011.414 0l.707.707a1 1 0 01-1.414 1.414l-.707-.707a1 1 0 010-1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM4 11a1 1 0 100-2H3a1 1 0 100 2h1z" />
                 </svg>
               ) : (
-                <svg className="w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                <svg className="w-4 h-4 text-slate-700" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
                 </svg>
               )}
             </button>
 
+            {/* Link de atalho rápido para voltar à Home */}
             <Link
               href="/"
-              className="inline-flex items-center justify-center bg-wine-50 dark:bg-wine-950/30 hover:bg-wine-100 dark:hover:bg-wine-900/50 text-wine-700 dark:text-wine-300 px-3.5 h-9 rounded-lg text-sm font-semibold transition-colors duration-200 border border-wine-200 dark:border-wine-800"
+              className="h-9 px-3 text-xs sm:text-sm font-semibold text-white bg-wine-600 hover:bg-wine-700 rounded-lg flex items-center justify-center shadow-sm transition-colors duration-200"
             >
-              Voltar
+              Ver Diário
             </Link>
           </div>
+
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-6 sm:py-10 space-y-6 sm:space-y-8">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-wine-700 dark:text-wine-300">
-            Galeria de Fotos do Diário
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Histórico visual dos sintomas e registros fotográficos associados aos scores do diário clínico.
-          </p>
-        </div>
+      {/* CONTEÚDO PRINCIPAL DA PÁGINA */}
+      <main className="max-w-5xl mx-auto px-4 py-6 sm:py-10">
 
-        {/* Erro */}
-        {error && (
-          <div className="p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 rounded-xl text-sm shadow-sm">
-            {error}
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 space-y-3">
+            <div className="w-10 h-10 border-4 border-wine-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Carregando seus registros visuais...</p>
           </div>
-        )}
-
-        {/* Carregando (Skeleton Loaders) */}
-        {loading && (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="flex flex-col gap-3 animate-pulse bg-white dark:bg-gray-900 rounded-2xl p-3 border border-rose-100/50 dark:border-gray-800 shadow-sm">
-                <div className="w-full aspect-square bg-gray-200 dark:bg-gray-800 rounded-xl" />
-                <div className="h-4 bg-gray-200 dark:bg-gray-800 rounded w-1/3 mt-2" />
-                <div className="flex gap-2">
-                  <div className="h-5 bg-gray-200 dark:bg-gray-800 rounded-md w-1/2" />
-                  <div className="h-5 bg-gray-200 dark:bg-gray-800 rounded-md w-1/2" />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Sem fotos registradas */}
-        {!loading && !error && entries.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 px-4 text-center bg-white dark:bg-gray-900 rounded-2xl border border-rose-100 dark:border-gray-800 shadow-sm max-w-md mx-auto">
-            <div className="w-16 h-16 mb-4 bg-rose-50 dark:bg-rose-950/50 rounded-full flex items-center justify-center text-wine-500 dark:text-wine-400">
+        ) : photos.length === 0 ? (
+          <div className="bg-white dark:bg-gray-900 border border-rose-100 dark:border-gray-800 rounded-2xl p-8 sm:p-12 text-center max-w-md mx-auto shadow-sm transition-colors duration-300">
+            <div className="w-16 h-16 mx-auto rounded-full bg-rose-50 dark:bg-rose-950/40 flex items-center justify-center text-wine-600 dark:text-wine-400 mb-4">
               <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <p className="text-gray-600 dark:text-gray-300 font-medium">
-              Você ainda não possui fotos registradas.
-            </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 max-w-xs">
-              Adicione fotos das crises no painel principal utilizando a seção de fotos diárias.
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">Nenhuma foto encontrada</h3>
+            <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-6">
+              Você ainda não anexou nenhuma imagem às suas crises diárias no painel principal do diário.
             </p>
             <Link
               href="/"
-              className="mt-5 inline-flex items-center justify-center bg-wine-600 hover:bg-wine-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-md hover:shadow-lg"
+              className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl font-semibold text-sm bg-wine-600 hover:bg-wine-700 text-white transition-colors shadow-sm shadow-wine-100 dark:shadow-none"
             >
-              Ir para o Painel
+              Registrar agora no Diário
             </Link>
           </div>
-        )}
+        ) : (
+          <div>
+            <div className="mb-6">
+              <h2 className="text-xl sm:text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+                Seu Histórico de Lesões
+              </h2>
+              <p className="text-gray-500 dark:text-gray-400 text-xs sm:text-sm mt-0.5">
+                Total de {photos.length} {photos.length === 1 ? 'imagem capturada' : 'imagens capturadas'} no diário. Click em uma foto para ampliá-la.
+              </p>
+            </div>
 
-        {/* Grid de Fotos do Diário (2 a 3 colunas) */}
-        {!loading && !error && entries.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="group flex flex-col bg-white dark:bg-gray-900 rounded-2xl border border-rose-100/50 dark:border-gray-800 overflow-hidden shadow-sm hover:shadow-md transition-all duration-200"
-              >
-                {/* Imagem uniforme usando object-cover */}
-                <div className="relative w-full aspect-square bg-gray-100 dark:bg-gray-950 overflow-hidden">
-                  <img
-                    src={entry.photo_url}
-                    alt={`Registro de Urticária em ${formatDate(entry.date)}`}
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
-                    loading="lazy"
-                  />
-                  {/* Botão de Excluir que abre o Modal */}
-                  <button
-                    onClick={() => setPhotoToDelete(entry)}
-                    title="Excluir foto"
-                    className="absolute top-2.5 right-2.5 bg-red-600 hover:bg-red-700 text-white p-1.5 rounded-full shadow-lg transition-all duration-150 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10"
+            {/* MALA DE GRID DE IMAGENS TOTALMENTE RESPONSIVO */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-5">
+              {photos.map((item) => (
+                <div
+                  key={item.id}
+                  className="group bg-white dark:bg-gray-900 border border-slate-100 dark:border-gray-800/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 flex flex-col h-full relative"
+                >
+                  {/* Container da Foto com Efeito de Hover */}
+                  <div
+                    onClick={() => setSelectedPhoto(item)}
+                    className="aspect-square w-full bg-slate-100 dark:bg-slate-800 relative cursor-zoom-in overflow-hidden shrink-0"
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={item.photo_url}
+                      alt={`Registro de crise do dia ${item.date}`}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 select-none"
+                      loading="lazy"
+                    />
 
-                {/* Data formatada e scores UAS7 logo abaixo da imagem */}
-                <div className="p-3 sm:p-4 flex flex-col gap-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2.5 py-0.5 rounded">
-                      {formatDate(entry.date)}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    {/* Score Urticária */}
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-600 dark:text-gray-400">Urticária</span>
-                      <span className={`px-1.5 py-0.5 rounded font-medium border text-[10px] ${getSeverityColor(entry.urticaria_score)}`}>
-                        {entry.urticaria_score !== null && entry.urticaria_score !== -1 ? entry.urticaria_score : '-'} • {getSeverityText(entry.urticaria_score)}
-                      </span>
-                    </div>
-
-                    {/* Score Coceira */}
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-gray-600 dark:text-gray-400">Coceira</span>
-                      <span className={`px-1.5 py-0.5 rounded font-medium border text-[10px] ${getSeverityColor(entry.coceira_score)}`}>
-                        {entry.coceira_score !== null && entry.coceira_score !== -1 ? entry.coceira_score : '-'} • {getSeverityText(entry.coceira_score)}
-                      </span>
+                    {/* Badge flutuante de data no canto superior esquerdo */}
+                    <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-white text-[11px] font-bold px-2 py-0.5 rounded-lg tracking-wide">
+                      {formatDate(item.date)}
                     </div>
                   </div>
+
+                  {/* Detalhes Clínicos do Dia correspondente associados à foto */}
+                  <div className="p-3 flex flex-col flex-grow justify-between gap-2.5">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Urticária</span>
+                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${getSeverityStyles(item.urticaria_score)}`}>
+                          {getSeverityText(item.urticaria_score)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Coceira</span>
+                        <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${getSeverityStyles(item.coceira_score)}`}>
+                          {getSeverityText(item.coceira_score)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Botão de Exclusão Discreto por Card */}
+                    <button
+                      type="button"
+                      disabled={deletingId !== null}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setPhotoToDelete(item)
+                      }}
+                      className="w-full text-center py-1 rounded-lg border border-red-100 dark:border-red-900/30 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 active:bg-red-100 text-[11px] font-semibold transition-colors flex items-center justify-center gap-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Excluir Registro
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         )}
       </main>
 
-      {/* POP-UP CUSTOMIZADO DE CONFIRMAÇÃO */}
-      {photoToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm transition-opacity duration-300">
-          <div className="w-full max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800 overflow-hidden transform transition-all scale-100 p-6">
+      {/* ==================================================== */}
+      {/* MODAL 1: VISUALIZADOR DE FOTO EM TELA CHEIA (ZOOM)    */}
+      {/* ==================================================== */}
+      {selectedPhoto && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 animate-fade-in backdrop-blur-sm cursor-zoom-out"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          {/* Botão de fechar modal flutuante no topo direito */}
+          <button
+            onClick={() => setSelectedPhoto(null)}
+            className="absolute top-4 right-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors duration-200"
+            aria-label="Fechar visualização"
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
 
-            {/* Ícone de Alerta Superior */}
-            <div className="mx-auto sm:mx-0 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 dark:bg-red-900/30 mb-4">
-              <svg className="h-6 w-6 text-red-600 dark:text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          <div
+            className="max-w-3xl w-full flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()} // impede fechar ao clicar na caixa interna
+          >
+            {/* Box da Imagem Principal */}
+            <div className="bg-neutral-900 rounded-2xl overflow-hidden border border-neutral-800 shadow-2xl relative aspect-[4/3] sm:aspect-auto sm:max-h-[75vh] flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedPhoto.photo_url}
+                alt="Registro ampliado"
+                className="max-w-full max-h-[75vh] object-contain select-none"
+              />
+            </div>
+
+            {/* Rodapé Informativo do Modal contendo as notas associadas */}
+            <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-slate-100 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+              <div>
+                <span className="font-bold text-gray-900 dark:text-white block text-base">
+                  Registro Clínico de {formatDate(selectedPhoto.date)}
+                </span>
+                <span className="text-gray-400 dark:text-gray-500 text-xs font-medium">
+                  Mapeado em {selectedPhoto.date.split('-').reverse().join('/')}
+                </span>
+              </div>
+
+              <div className="flex gap-2.5 shrink-0">
+                <div className="px-3 py-1.5 bg-rose-50/50 dark:bg-gray-800/50 border border-rose-100/40 dark:border-gray-700/60 rounded-xl flex items-center gap-2">
+                  <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Urticária:</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${getSeverityStyles(selectedPhoto.urticaria_score)}`}>
+                    {getSeverityText(selectedPhoto.urticaria_score)}
+                  </span>
+                </div>
+                <div className="px-3 py-1.5 bg-rose-50/50 dark:bg-gray-800/50 border border-rose-100/40 dark:border-gray-700/60 rounded-xl flex items-center gap-2">
+                  <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Coceira:</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${getSeverityStyles(selectedPhoto.coceira_score)}`}>
+                    {getSeverityText(selectedPhoto.coceira_score)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* MODAL 2: CONFIRMAÇÃO DE EXCLUSÃO SEGURA              */}
+      {/* ==================================================== */}
+      {photoToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white dark:bg-gray-900 border border-slate-100 dark:border-gray-800 w-full max-w-sm rounded-2xl p-5 sm:p-6 shadow-2xl text-center">
+
+            {/* Ícone de Alerta */}
+            <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
 
-            {/* Textos Informativos */}
-            <div className="text-center sm:text-left">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">
                 Confirmar Exclusão?
               </h3>
               <p className="text-gray-500 dark:text-gray-400 text-sm mb-6 leading-relaxed">
@@ -385,13 +456,14 @@ export default function GaleriaPage() {
                 }}
                 className="w-full sm:w-auto px-5 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-xl shadow-sm shadow-red-100 dark:shadow-none transition-colors duration-200"
               >
-                Sim, Excluir
+                Excluir
               </button>
             </div>
 
           </div>
         </div>
       )}
+
     </div>
   )
 }

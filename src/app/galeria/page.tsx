@@ -203,48 +203,36 @@ export default function GaleriaPage() {
   }
 
   return (
-    <div className="min-h-screen bg-rose-50 dark:bg-gray-950 text-gray-800 dark:text-gray-100 transition-colors duration-300">
+    <div className="min-h-screen bg-rose-50/30 dark:bg-slate-900 transition-colors duration-300 pb-12">
 
-      {/* HEADER MINI/SIMPLIFICADO PARA A TELA DE GALERIA */}
-      <header className="sticky top-0 z-40 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-rose-100 dark:border-gray-800 shadow-sm transition-colors duration-300">
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+      {/* CABEÇALHO DA GALERIA UNIFICADO */}
+      <header className="sticky top-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-rose-100 dark:border-gray-800 shadow-sm transition-colors duration-300">
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
 
-          {/* Logo / Link para voltar */}
-          <Link href="/" className="flex items-center gap-2 group">
-            <svg className="w-5 h-5 text-wine-600 dark:text-wine-400 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          {/* Botão ÚNICO de voltar (Seta + Texto juntos) */}
+          <Link
+            href="/"
+            className="flex items-center gap-2 text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-wine-700 dark:hover:text-rose-400 transition-colors duration-200"
+          >
+            <svg
+              className="w-5 h-5 stroke-[2.5]"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            <span className="font-bold text-base sm:text-lg text-slate-900 dark:text-white tracking-tight">
-              Galeria de Crises
-            </span>
+            <span className="hidden sm:inline">Voltar ao Diário</span>
           </Link>
 
-          {/* Botões do Topo */}
-          <div className="flex items-center gap-2">
-            {/* Botão de Dark Mode */}
-            <button
-              onClick={toggleDarkMode}
-              aria-label="Alternar tema claro/escuro"
-              className="w-9 h-9 rounded-lg flex items-center justify-center bg-gray-50 dark:bg-gray-800 border border-rose-100 dark:border-gray-700/60 text-gray-600 dark:text-gray-300 hover:bg-rose-100/50 dark:hover:bg-gray-700 transition-colors"
-            >
-              {dark ? (
-                <svg className="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 14.536a1 1 0 011.414 0l.707.707a1 1 0 01-1.414 1.414l-.707-.707a1 1 0 010-1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM4 11a1 1 0 100-2H3a1 1 0 100 2h1z" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4 text-slate-700" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-                </svg>
-              )}
-            </button>
+          {/* Título Centralizado */}
+          <h1 className="text-lg sm:text-xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">
+            Galeria de Crises
+          </h1>
 
-            {/* Link de atalho rápido para voltar à Home */}
-            <Link
-              href="/"
-              className="h-9 px-3 text-xs sm:text-sm font-semibold text-white bg-wine-600 hover:bg-wine-700 rounded-lg flex items-center justify-center shadow-sm transition-colors duration-200"
-            >
-              Ver Diário
-            </Link>
+          {/* Espaçador invisível à direita para manter o título perfeitamente centralizado */}
+          <div className="w-[32px] sm:w-[120px] flex justify-end">
+            {/* Se você quiser colocar o botão de Dark Mode aqui na galeria também, pode colar ele aqui. Caso contrário, deixe este bloco vazio como espaçador */}
           </div>
 
         </div>

@@ -1,10 +1,19 @@
 import type { Metadata } from 'next'
 import './globals.css'
 
+export const viewport = {
+  themeColor: '#991b1b',
+}
+
 export const metadata: Metadata = {
   title: 'Urticaria Tracker — UAS7 Semanal',
   description: 'Rastreador semanal de urticária com pontuação UAS7. Registre e acompanhe seus sintomas diários de urticária e coceira.',
   keywords: 'urticária, UAS7, tracker, saúde, dermatologia',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Urticaria Tracker',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

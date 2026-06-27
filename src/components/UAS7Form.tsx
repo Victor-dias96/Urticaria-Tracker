@@ -27,7 +27,7 @@ export default function UAS7Form({
   const lastDay = weekDays[6]?.date || ''
 
   return (
-    <div id="uas7-form-capture" className="bg-white dark:bg-gray-900 rounded-2xl border border-rose-100 dark:border-gray-800 shadow-sm p-4 sm:p-6 transition-all duration-300">
+    <div id="uas7-form-capture" className="w-full bg-white dark:bg-gray-900 rounded-2xl ...">
       {/* Title & Progress Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>

@@ -13,10 +13,6 @@ interface ActionButtonsProps {
 export default function ActionButtons({ scores, weekDays, uas7Total }: ActionButtonsProps) {
   // --- UTILITÁRIOS DE FORMATAÇÃO ---
 
-  /**
-   * Gera a mensagem de texto médica formatada com os dados da semana.
-   * Usada tanto para WhatsApp quanto para E-mail.
-   */
   const generateReportText = (): string => {
     const dateStr = new Date().toLocaleDateString('pt-BR')
     const firstDay = weekDays[0]?.date || ''
@@ -46,63 +42,84 @@ export default function ActionButtons({ scores, weekDays, uas7Total }: ActionBut
     return text
   }
 
+  // --- FUNÇÃO MÁGICA: PREPARA A TELA ANTES DE TIRAR A FOTO ---
+  const captureFormElement = async () => {
+    const element = document.getElementById('uas7-form-capture')
+    if (!element) {
+      throw new Error('Formulário não encontrado para exportação.')
+    }
+
+    return await html2canvas(element, {
+      scale: 2, // Alta resolução
+      useCORS: true,
+      windowWidth: 1200, // Aumentamos a janela virtual para dar mais espaço
+      onclone: (clonedDoc) => {
+        // 1. O SEGREDO DO DARK MODE: Remove a classe 'dark' da raiz do documento clonado
+        // Isso força todos os componentes do Tailwind a renderizarem com as cores do Modo Claro
+        clonedDoc.documentElement.classList.remove('dark')
+        clonedDoc.body.classList.remove('dark')
+
+        const clonedElement = clonedDoc.getElementById('uas7-form-capture')
+        if (clonedElement) {
+          // 2. CORREÇÃO DO CORTE: Aumentamos a largura para 1000px para dar respiro aos textos
+          clonedElement.style.width = '1000px'
+          clonedElement.style.maxWidth = 'none'
+          clonedElement.style.padding = '30px' // Mais preenchimento lateral
+          clonedElement.style.backgroundColor = '#ffffff' // Garante fundo branco
+          clonedElement.style.color = '#1f2937' // Texto principal escuro
+
+          // 3. Remove os cortadores (overflow)
+          const allElements = clonedElement.getElementsByTagName('*')
+          for (let i = 0; i < allElements.length; i++) {
+            const el = allElements[i] as HTMLElement
+            if (el.classList.contains('overflow-x-auto') || el.classList.contains('overflow-hidden')) {
+              el.classList.remove('overflow-x-auto', 'overflow-hidden')
+              el.style.overflow = 'visible'
+            }
+          }
+        }
+      }
+    })
+  }
+
   // --- 1. EXPORTAR PDF ---
   const handleExportPDF = async () => {
     try {
-      const element = document.getElementById('uas7-form-capture')
-      if (!element) {
-        alert('Erro: Formulário não encontrado para exportação.')
-        return
-      }
-      
-      const canvas = await html2canvas(element, { scale: 2, useCORS: true })
+      const canvas = await captureFormElement()
       const imgData = canvas.toDataURL('image/png')
-      
+
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4'
       })
-      
+
       const pdfWidth = pdf.internal.pageSize.getWidth()
-      
       const dateStr = new Date().toLocaleDateString('pt-BR')
+
       pdf.setFont('helvetica', 'bold')
-      pdf.setFontSize(16)
-      pdf.text(`Relatório UAS7 - ${dateStr}`, pdfWidth / 2, 15, { align: 'center' })
-      
-      // A margem lateral será 10mm, então a largura da imagem é pdfWidth - 20.
-      // Altura proporcional: (canvasHeight * imageWidth) / canvasWidth
+      pdf.setFontSize(14)
+      pdf.text(`Relatório UAS7 - ${dateStr}`, pdfWidth / 2, 12, { align: 'center' })
+
+      // Calcula a altura proporcional da imagem (Margem de 10mm de cada lado)
       const imgWidth = pdfWidth - 20
       const imgHeight = (canvas.height * imgWidth) / canvas.width
-      
-      pdf.addImage(imgData, 'PNG', 10, 25, imgWidth, imgHeight)
+
+      pdf.addImage(imgData, 'PNG', 10, 18, imgWidth, imgHeight)
       pdf.save(`Relatorio_UAS7_${dateStr.replace(/\//g, '-')}.pdf`)
     } catch (error) {
       console.error('Erro ao gerar PDF:', error)
-      alert('Falha ao gerar o arquivo PDF. Verifique as permissões ou tente novamente.')
+      alert('Falha ao gerar o arquivo PDF. Tente novamente.')
     }
   }
 
-  // --- 2. SALVAR COMO IMAGEM (html2canvas → PNG download) ---
+  // --- 2. SALVAR COMO IMAGEM ---
   const handleSaveImage = async () => {
     try {
-      const element = document.getElementById('uas7-form-capture')
-      if (!element) {
-        alert('Erro: Formulário não encontrado para exportação.')
-        return
-      }
-
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: null // Preserva o background original (dark mode incluso)
-      })
-
+      const canvas = await captureFormElement()
       const dataUrl = canvas.toDataURL('image/png')
       const dateStr = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')
 
-      // Cria um elemento <a> temporário para disparar o download automático
       const link = document.createElement('a')
       link.href = dataUrl
       link.download = `relatorio-uas7-${dateStr}.png`
@@ -134,8 +151,7 @@ export default function ActionButtons({ scores, weekDays, uas7Total }: ActionBut
       <h3 className="text-sm font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">
         Ações
       </h3>
-      
-      {/* Exportar PDF (Vermelho/Vinho Médio) */}
+
       <button
         onClick={handleExportPDF}
         className="w-full py-3.5 px-5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2.5 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
@@ -145,8 +161,7 @@ export default function ActionButtons({ scores, weekDays, uas7Total }: ActionBut
         </svg>
         Exportar PDF
       </button>
-      
-      {/* Salvar como Imagem (Vinho escuro) */}
+
       <button
         onClick={handleSaveImage}
         className="w-full py-3.5 px-5 bg-wine-900 hover:bg-wine-950 dark:bg-wine-800 dark:hover:bg-wine-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2.5 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
@@ -157,7 +172,6 @@ export default function ActionButtons({ scores, weekDays, uas7Total }: ActionBut
         Salvar como Imagem
       </button>
 
-      {/* Compartilhar via WhatsApp (Verde vibrante com ícone) */}
       <button
         onClick={handleShareWhatsApp}
         className="w-full py-3.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2.5 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
@@ -168,7 +182,6 @@ export default function ActionButtons({ scores, weekDays, uas7Total }: ActionBut
         Compartilhar via WhatsApp
       </button>
 
-      {/* Enviar por E-mail (Branco/Cinza muito claro) */}
       <button
         onClick={handleSendEmail}
         className="w-full py-3.5 px-5 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-800 dark:text-gray-200 font-bold rounded-xl border-2 border-gray-200 dark:border-gray-750 shadow-sm flex items-center justify-center gap-2.5 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"

@@ -18,7 +18,38 @@ const EMPTY_SCORES: DayScore[] = Array(7).fill({ urticaria: -1, itch: -1 })
 
 export default function UAS7App() {
   const [dark, setDark] = useState(false)
-  
+
+  // Assim que a página carregar, ele verifica se o usuário já tinha escolhido o dark mode antes
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme')
+
+    // Se estava salvo como dark, ou se o celular da pessoa já é dark mode por padrão
+    if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      setDark(true)
+      document.documentElement.classList.add('dark')
+    } else {
+      setDark(false)
+      document.documentElement.classList.remove('dark')
+    }
+  }, [])
+
+  // Nova função para alternar e salvar a preferência no navegador
+  const toggleDarkMode = () => {
+    setDark((prevDark) => {
+      const isNowDark = !prevDark
+
+      if (isNowDark) {
+        document.documentElement.classList.add('dark')
+        localStorage.setItem('theme', 'dark')
+      } else {
+        document.documentElement.classList.remove('dark')
+        localStorage.setItem('theme', 'light')
+      }
+
+      return isNowDark
+    })
+  }
+
   // Dynamic Start Date (defaults to today)
   const [startDate, setStartDate] = useState(() => {
     // We use a simple YYYY-MM-DD string to bind to <input type="date">
@@ -40,7 +71,7 @@ export default function UAS7App() {
     }
     fetchUser()
   }, [])
-  
+
   const [scoresData, setScoresData] = useState<{ week: string; scores: DayScore[] }>({
     week: '',
     scores: EMPTY_SCORES
@@ -104,9 +135,9 @@ export default function UAS7App() {
           entriesData.forEach(entry => {
             const idx = weekDays.findIndex(d => d.fullDate === entry.date)
             if (idx !== -1) {
-              newScores[idx] = { 
-                urticaria: entry.urticaria_score ?? -1, 
-                itch: entry.coceira_score ?? -1 
+              newScores[idx] = {
+                urticaria: entry.urticaria_score ?? -1,
+                itch: entry.coceira_score ?? -1
               }
             }
           })
@@ -120,7 +151,7 @@ export default function UAS7App() {
             newPhotoUrls[photo.date].push({ id: photo.id, url: photo.photo_url })
           })
         }
-        
+
         setScoresData({ week: startDate, scores: newScores })
         setPhotoUrls(newPhotoUrls)
       } catch (error) {
@@ -134,11 +165,6 @@ export default function UAS7App() {
   const handleStartDateChange = (newDate: string) => {
     setStartDate(newDate)
   }
-
-  useEffect(() => {
-    const root = document.documentElement
-    dark ? root.classList.add('dark') : root.classList.remove('dark')
-  }, [dark])
 
   const setScore = async (dayIdx: number, field: 'urticaria' | 'itch', value: number) => {
     if (!userId) {
@@ -186,33 +212,33 @@ export default function UAS7App() {
       if (error) {
         // Fallback se onConflict não funcionar por falta de constraint única
         if (error.code === 'PGRST116' || error.message.includes('constraint')) {
-           const { data: existing } = await supabase
-             .from('uas7_entries')
-             .select('id')
-             .eq('user_id', userId)
-             .eq('date', fullDate)
-             .maybeSingle();
-           
-           if (existing) {
-             const { error: updateError } = await supabase
-               .from('uas7_entries')
-               .update({
-                 urticaria_score: payload.urticaria_score,
-                 coceira_score: payload.coceira_score,
-               })
-               .eq('id', existing.id);
-             if (updateError) throw updateError;
-           } else {
-             const { error: insertError } = await supabase
-               .from('uas7_entries')
-               .insert(payload);
-             if (insertError) throw insertError;
-           }
+          const { data: existing } = await supabase
+            .from('uas7_entries')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('date', fullDate)
+            .maybeSingle();
+
+          if (existing) {
+            const { error: updateError } = await supabase
+              .from('uas7_entries')
+              .update({
+                urticaria_score: payload.urticaria_score,
+                coceira_score: payload.coceira_score,
+              })
+              .eq('id', existing.id);
+            if (updateError) throw updateError;
+          } else {
+            const { error: insertError } = await supabase
+              .from('uas7_entries')
+              .insert(payload);
+            if (insertError) throw insertError;
+          }
         } else {
           throw error;
         }
       }
-      
+
       // Feedback visual opcional: Console log para dev
       console.log('Nota salva com sucesso!');
     } catch (e) {
@@ -290,9 +316,9 @@ export default function UAS7App() {
 
   return (
     <div className="min-h-screen bg-rose-50 dark:bg-gray-950 transition-colors duration-300">
-      <Header 
-        dark={dark} 
-        onToggleDark={() => setDark(d => !d)} 
+      <Header
+        dark={dark}
+        onToggleDark={toggleDarkMode}
         startDate={startDate}
         onStartDateChange={handleStartDateChange}
       />

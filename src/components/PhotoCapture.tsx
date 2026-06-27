@@ -411,10 +411,6 @@ export default function PhotoCapture({
   }
 
   // --- 4. UPLOAD PARA O SUPABASE STORAGE ---
-  /**
-   * Faz upload da imagem capturada para o bucket 'urticaria-photos' e dispara o callback
-   * `onPhotoSaved` para que o componente pai (UAS7App) persista a URL no banco de dados.
-   */
   const handleSaveToStorage = async () => {
     if (!capturedImage || !userId || !selectedDate) return
 
@@ -422,17 +418,19 @@ export default function PhotoCapture({
     setUploadError(null)
 
     try {
+      // 1. Apenas faz o upload da imagem para o Storage (Bucket)
       const publicUrl = await uploadUrticariaPhoto(capturedImage, userId, selectedDate)
 
-      // Notifica o componente pai para persistir a URL no banco e aguarda o ID do registro
+      // 2. Delega o salvamento no banco de dados INTEIRAMENTE para o componente pai.
+      // Isso evita a duplicação de registos e resolve o bug da lixeira!
       const insertedId = await onPhotoSaved(publicUrl, selectedDate)
 
       if (insertedId) {
-        // Adiciona a foto recém salva ao histórico de miniaturas local imediatamente
+        // Adiciona a foto recém salva ao histórico de miniaturas local
         setConfirmedPhotos(prev => [...prev, { id: insertedId, url: publicUrl }])
       }
 
-      // Limpa a imagem capturada do estado local para permitir a próxima captura de forma fluida
+      // Limpa a imagem capturada do estado local
       setCapturedImage(null)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erro desconhecido ao salvar a foto.'
@@ -575,7 +573,7 @@ export default function PhotoCapture({
                   alt={`Foto salva ${idx + 1}`}
                   className="w-full h-full object-cover transition-transform duration-200 hover:scale-105"
                 />
-                
+
                 {/* Ícone de confirmação */}
                 <div className="absolute top-1 left-1 bg-emerald-500 text-white p-0.5 rounded-full shadow-sm animate-scale-in">
                   <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={4}>
@@ -730,11 +728,10 @@ export default function PhotoCapture({
               muted
               onLoadedMetadata={handleVideoReady}
               onLoadedData={handleVideoData}
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${
-                isCapturing && !capturedImage && !cameraError
-                  ? 'opacity-100 animate-fade-in'
-                  : 'opacity-0 pointer-events-none'
-              }`}
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${isCapturing && !capturedImage && !cameraError
+                ? 'opacity-100 animate-fade-in'
+                : 'opacity-0 pointer-events-none'
+                }`}
             />
 
             {/* FOTO CAPTURADA FINALIZADA (Base64 Overlay) */}
